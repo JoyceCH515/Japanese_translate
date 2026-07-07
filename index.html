@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>日語即時翻譯</title>
+<style>
+  :root{
+    --bg:#0d1021; --gold:#f5c34d; --ink:#f4f2ec;
+    --ja:#8f96b8; --line:#262b4a; --err:#ff8080; --ok:#7ee0a3;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  header{
+    padding:14px 18px 10px; display:flex; align-items:center;
+    justify-content:space-between; border-bottom:1px solid var(--line); flex-shrink:0;
+  }
+  header h1{font-size:15px;font-weight:700;letter-spacing:.12em;color:var(--gold)}
+  header .sub{font-size:11px;color:var(--ja);letter-spacing:.08em;margin-top:2px}
+  #status{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ja)}
+  #dot{width:9px;height:9px;border-radius:50%;background:#4a5070;transition:background .2s}
+  #dot.live{background:var(--gold);animation:pulse 1.4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(245,195,77,.55)}50%{box-shadow:0 0 0 7px rgba(245,195,77,0)}}
+  @media (prefers-reduced-motion:reduce){#dot.live{animation:none}}
+
+  #steps{
+    flex-shrink:0; padding:10px 16px; border-bottom:1px solid var(--line);
+    font-size:13px; line-height:1.9; display:none;
+  }
+  #steps .st{color:var(--ja)}
+  #steps .st.ok{color:var(--ok)}
+  #steps .st.bad{color:var(--err)}
+
+  #scroller{
+    flex:1; overflow-y:auto; padding:20px 20px 12px; scroll-behavior:smooth;
+  }
+  #empty{
+    text-align:center;color:var(--ja);font-size:14px;line-height:2;
+    padding:60px 30px 0;
+  }
+  #empty b{color:var(--ink);font-weight:700}
+  #transcript{
+    font-size:16px; font-weight:400; line-height:1.8; color:var(--ink);
+    word-break:break-word;
+  }
+  #transcript .seg{margin-right:.25em}
+  #transcript .seg.wait{color:var(--ja);font-weight:400}
+
+  #jaBar{
+    flex-shrink:0; min-height:22px;
+    padding:8px 20px; border-top:1px solid var(--line);
+    font-size:13px; color:var(--ja); line-height:1.5;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  #jaBar:empty{display:none}
+
+  footer{
+    flex-shrink:0; padding:10px 16px calc(14px + env(safe-area-inset-bottom));
+    display:flex; gap:10px; align-items:center;
+    border-top:1px solid var(--line); background:var(--bg);
+  }
+  #toggle{
+    flex:1;height:56px;border:none;border-radius:28px;
+    font-size:18px;font-weight:700;letter-spacing:.15em;font-family:inherit;cursor:pointer;
+    background:var(--gold);color:#211a05;transition:background .15s,color .15s;
+  }
+  #toggle.on{background:#3a2f3f;color:var(--err);border:1px solid rgba(255,128,128,.4)}
+  #clear{
+    width:56px;height:56px;border-radius:50%;background:none;
+    border:1px solid var(--line);color:var(--ja);font-size:12px;font-family:inherit;cursor:pointer;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>日語即時翻譯</h1>
+    <div class="sub">日本語 → 繁體中文</div>
+  </div>
+  <div id="status"><span id="dot"></span><span id="stTxt">待機中</span></div>
+</header>
+
+<div id="steps"></div>
+
+<div id="scroller">
+  <div id="empty">
+    按下 <b>開始聆聽</b>,允許麥克風權限,<br>
+    把手機朝向聲音來源。<br>
+    中文翻譯會像字幕一樣連續顯示。
+  </div>
+  <div id="transcript"></div>
+</div>
+
+<div id="jaBar"></div>
+
+<footer>
+  <button id="clear">清除</button>
+  <button id="toggle">開始聆聽</button>
+</footer>
+
+<script>
+(function(){
+  var scroller=document.getElementById('scroller');
+  var transcript=document.getElementById('transcript');
+  var empty=document.getElementById('empty');
+  var toggle=document.getElementById('toggle');
+  var clearBtn=document.getElementById('clear');
+  var dot=document.getElementById('dot');
+  var stTxt=document.getElementById('stTxt');
+  var steps=document.getElementById('steps');
+  var jaBar=document.getElementById('jaBar');
+
+  var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  var rec=null, active=false, wakeLock=null;
+  var lastNorm='', lastFinalTime=0, lastSeg=null, lastSeq=0, firstStartShown=false;
+
+  function logStep(msg,cls){
+    steps.style.display='block';
+    var d=document.createElement('div');
+    d.className='st'+(cls?' '+cls:'');
+    d.textContent=msg;
+    steps.appendChild(d);
+    while(steps.children.length>5) steps.removeChild(steps.firstChild);
+  }
+  function clearSteps(){steps.innerHTML='';steps.style.display='none';}
+
+  function setUI(on){
+    active=on;
+    toggle.textContent=on?'停止':'開始聆聽';
+    toggle.classList.toggle('on',on);
+    dot.classList.toggle('live',on);
+    stTxt.textContent=on?'聆聽中':'待機中';
+    if(!on) jaBar.textContent='';
+  }
+
+  function keepAwake(on){
+    try{
+      if(on && 'wakeLock' in navigator){
+        navigator.wakeLock.request('screen').then(function(w){wakeLock=w;}).catch(function(){});
+      }else if(wakeLock){ wakeLock.release(); wakeLock=null; }
+    }catch(e){}
+  }
+
+  function scrollDown(){scroller.scrollTop=scroller.scrollHeight;}
+
+  function newSeg(){
+    empty.style.display='none';
+    var s=document.createElement('span');
+    s.className='seg wait';
+    s.textContent='…';
+    transcript.appendChild(s);
+    scrollDown();
+    return s;
+  }
+
+  function translate(jaText,seg,seq){
+    var url='https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=zh-TW&dt=t&q='+encodeURIComponent(jaText);
+    fetch(url).then(function(r){
+      if(!r.ok) throw new Error(r.status);
+      return r.json();
+    }).then(function(d){
+      if(seg.dataset.seq!==String(seq)) return; // 已有更新版本,放棄舊結果
+      var out=(d[0]||[]).map(function(s){return s[0];}).join('');
+      seg.textContent=(out||'')+' ';
+      seg.classList.remove('wait');
+      scrollDown();
+    }).catch(function(){
+      if(seg.dataset.seq!==String(seq)) return;
+      seg.textContent='(翻譯失敗)';
+      scrollDown();
+    });
+  }
+
+  function handleFinal(txt){
+    var now=Date.now();
+    var n=txt.replace(/\s+/g,'');
+    if(lastSeg && now-lastFinalTime<15000 && lastNorm){
+      if(n===lastNorm) return;
+      if(lastNorm.indexOf(n)===0) return;          // 縮短的重複 → 跳過
+      if(n.indexOf(lastNorm)===0){                 // 延伸 → 更新同一段
+        lastNorm=n; lastFinalTime=now;
+        lastSeq++;
+        lastSeg.dataset.seq=String(lastSeq);
+        translate(txt,lastSeg,lastSeq);
+        return;
+      }
+    }
+    lastNorm=n; lastFinalTime=now;
+    lastSeg=newSeg();
+    lastSeq++;
+    lastSeg.dataset.seq=String(lastSeq);
+    translate(txt,lastSeg,lastSeq);
+  }
+
+  function makeRec(){
+    var r=new SR();
+    r.lang='ja-JP';
+    r.continuous=true;
+    r.interimResults=true;
+
+    r.onstart=function(){
+      if(!firstStartShown){
+        firstStartShown=true;
+        clearSteps();
+        logStep('✓ 語音辨識已啟動,請說話','ok');
+        setTimeout(function(){clearSteps();},3000);
+      }
+    };
+    r.onaudiostart=function(){stTxt.textContent='聆聽中(收音正常)';};
+
+    r.onresult=function(ev){
+      var interim='';
+      for(var i=ev.resultIndex;i<ev.results.length;i++){
+        var res=ev.results[i];
+        var txt=res[0].transcript.trim();
+        if(!txt) continue;
+        if(res.isFinal){
+          jaBar.textContent='';
+          handleFinal(txt);
+        }else{
+          interim+=txt;
+        }
+      }
+      if(interim) jaBar.textContent='🎧 '+interim;
+    };
+
+    r.onerror=function(ev){
+      if(ev.error==='not-allowed'||ev.error==='service-not-allowed'){
+        logStep('✕ 麥克風被拒絕('+ev.error+'):點網址列左邊圖示 → 權限 → 麥克風改為允許','bad');
+        stop();
+      }else if(ev.error==='network'){
+        logStep('✕ 辨識服務連線失敗(network),確認網路後再按開始','bad');
+      }else if(ev.error!=='no-speech'&&ev.error!=='aborted'){
+        logStep('✕ 辨識錯誤:'+ev.error,'bad');
+      }
+    };
+
+    r.onend=function(){
+      if(active){ try{r.start();}catch(e){} }
+    };
+    return r;
+  }
+
+  function start(){
+    clearSteps();
+    firstStartShown=false;
+
+    if(!SR){
+      logStep('✕ 這個瀏覽器不支援語音辨識,請用 Android 的 Chrome','bad');
+      return;
+    }
+    if(!window.isSecureContext){
+      logStep('✕ 網址是 '+location.protocol+'// 開頭,無法使用麥克風','bad');
+      logStep('必須用 https:// 網址開啟(例如 GitHub Pages),不能直接開檔案','bad');
+      return;
+    }
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+      logStep('✕ 這個環境無法存取麥克風(可能是內嵌視窗),請用 Chrome 直接開網址','bad');
+      return;
+    }
+
+    logStep('1. 正在要求麥克風權限…(此時應跳出詢問視窗)');
+
+    navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
+      stream.getTracks().forEach(function(t){t.stop();});
+      if(!rec) rec=makeRec();
+      try{rec.start();}catch(e){}
+      setUI(true);
+      keepAwake(true);
+    }).catch(function(err){
+      if(err.name==='NotAllowedError'||err.name==='SecurityError'){
+        logStep('✕ 權限被拒絕('+err.name+')','bad');
+        logStep('解法A:點網址列左邊圖示 → 權限 → 重設,重新整理後再按開始','bad');
+        logStep('解法B:手機設定 → 應用程式 → Chrome → 權限 → 麥克風 → 允許','bad');
+      }else if(err.name==='NotFoundError'){
+        logStep('✕ 找不到麥克風裝置('+err.name+')','bad');
+      }else{
+        logStep('✕ 麥克風啟動失敗:'+err.name+' '+err.message,'bad');
+      }
+    });
+  }
+
+  function stop(){
+    setUI(false);
+    keepAwake(false);
+    if(rec){try{rec.stop();}catch(e){}}
+  }
+
+  toggle.addEventListener('click',function(){ active?stop():start(); });
+
+  clearBtn.addEventListener('click',function(){
+    transcript.innerHTML='';
+    jaBar.textContent='';
+    lastSeg=null; lastNorm='';
+    empty.style.display='';
+    clearSteps();
+  });
+
+  document.addEventListener('visibilitychange',function(){
+    if(!document.hidden && active){
+      keepAwake(true);
+      try{rec.start();}catch(e){}
+    }
+  });
+})();
+</script>
+</body>
+</html>
