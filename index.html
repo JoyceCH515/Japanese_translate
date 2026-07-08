@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>日語即時翻譯</title>
+<style>
+  :root{
+    --bg:#0d1021; --gold:#f5c34d; --ink:#f4f2ec;
+    --ja:#8f96b8; --line:#262b4a; --err:#ff8080; --ok:#7ee0a3;
+    --fs:26px;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  header{
+    padding:12px 16px 10px; display:flex; align-items:center;
+    justify-content:space-between; border-bottom:1px solid var(--line); flex-shrink:0; gap:8px;
+  }
+  header h1{font-size:15px;font-weight:700;letter-spacing:.12em;color:var(--gold)}
+  header .sub{font-size:11px;color:var(--ja);letter-spacing:.08em;margin-top:2px}
+  #hRight{display:flex;align-items:center;gap:8px}
+  #status{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ja)}
+  #dot{width:9px;height:9px;border-radius:50%;background:#4a5070;transition:background .2s}
+  #dot.live{background:var(--gold);animation:pulse 1.4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(245,195,77,.55)}50%{box-shadow:0 0 0 7px rgba(245,195,77,0)}}
+  @media (prefers-reduced-motion:reduce){#dot.live{animation:none}}
+  .fsBtn{
+    width:38px;height:38px;border-radius:10px;background:none;cursor:pointer;
+    border:1px solid var(--line);color:var(--ink);font-family:inherit;font-weight:700;
+  }
+  #fsMinus{font-size:14px}
+  #fsPlus{font-size:19px}
+  #ttsBtn.on{color:var(--gold);border-color:var(--gold)}
+  #ttsBtn.speaking{animation:spk 1s ease-in-out infinite}
+  @keyframes spk{0%,100%{box-shadow:0 0 0 0 rgba(245,195,77,.45)}50%{box-shadow:0 0 0 6px rgba(245,195,77,0)}}
+  #gear{font-size:17px}
+
+  #steps{
+    flex-shrink:0; padding:10px 16px; border-bottom:1px solid var(--line);
+    font-size:14px; line-height:1.9; display:none;
+  }
+  #steps .st{color:var(--ja)}
+  #steps .st.ok{color:var(--ok)}
+  #steps .st.bad{color:var(--err)}
+
+  /* 設定面板 */
+  #settings{
+    flex-shrink:0; border-bottom:1px solid var(--line);
+    padding:14px 16px; display:none; font-size:14px; line-height:1.8;
+  }
+  #settings.open{display:block}
+  #settings .ttl{color:var(--gold);font-weight:700;letter-spacing:.08em;margin-bottom:6px}
+  #settings label{display:block;margin:4px 0;color:var(--ink)}
+  #settings input[type=radio]{margin-right:8px;transform:scale(1.2)}
+  #settings input[type=text],#settings input[type=password]{
+    width:100%;margin:5px 0;padding:10px 12px;border-radius:9px;
+    border:1px solid var(--line);background:#141833;color:var(--ink);
+    font-family:inherit;font-size:14px;
+  }
+  #settings .hint{color:var(--ja);font-size:12px;line-height:1.7;margin:6px 0}
+  #settings .hint b{color:var(--ink)}
+  #saveSet{
+    margin-top:8px;padding:10px 22px;border:none;border-radius:10px;
+    background:var(--gold);color:#211a05;font-weight:700;font-family:inherit;
+    font-size:14px;cursor:pointer;letter-spacing:.1em;
+  }
+  #azFields{display:none;margin-top:4px}
+  #azFields.show{display:block}
+
+  #scroller{
+    flex:1; overflow-y:auto; padding:18px 18px 12px;
+  }
+  #empty{
+    text-align:center;color:var(--ja);font-size:16px;line-height:2;
+    padding:40px 26px 0;
+  }
+  #empty b{color:var(--ink);font-weight:700}
+  #transcript{
+    font-size:var(--fs); font-weight:500; line-height:1.65; color:var(--ink);
+    word-break:break-word;
+  }
+  #transcript .blk{
+    margin:0 0 14px; padding:0 0 12px;
+    border-bottom:1px dashed rgba(143,150,184,.22);
+  }
+  #transcript .blk.raw{color:#b9c0e0;font-weight:400;font-style:italic}
+  #transcript .blk.live{color:#cdd3ec;border-bottom:none;min-height:1.7em}
+
+  #jaBar{
+    flex-shrink:0; min-height:22px;
+    padding:8px 18px; border-top:1px solid var(--line);
+    font-size:16px; color:var(--ja); line-height:1.5;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  #jaBar:empty{display:none}
+
+  footer{
+    flex-shrink:0; padding:10px 16px calc(14px + env(safe-area-inset-bottom));
+    display:flex; gap:10px; align-items:center;
+    border-top:1px solid var(--line); background:var(--bg);
+  }
+  #toggle{
+    flex:1;height:56px;border:none;border-radius:28px;
+    font-size:18px;font-weight:700;letter-spacing:.15em;font-family:inherit;cursor:pointer;
+    background:var(--gold);color:#211a05;transition:background .15s,color .15s;
+  }
+  #toggle.on{background:#3a2f3f;color:var(--err);border:1px solid rgba(255,128,128,.4)}
+  #clear{
+    width:56px;height:56px;border-radius:50%;background:none;
+    border:1px solid var(--line);color:var(--ja);font-size:12px;font-family:inherit;cursor:pointer;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>日語即時翻譯</h1>
+    <div class="sub" id="engLabel">日本語 → 繁體中文</div>
+  </div>
+  <div id="hRight">
+    <button id="fsMinus" class="fsBtn">A−</button>
+    <button id="fsPlus" class="fsBtn">A＋</button>
+    <button id="ttsBtn" class="fsBtn" title="朗讀已完成的中文翻譯">🔇</button>
+    <button id="gear" class="fsBtn">⚙</button>
+    <div id="status"><span id="dot"></span><span id="stTxt">待機中</span></div>
+  </div>
+</header>
+
+<div id="settings">
+  <div class="ttl">辨識引擎</div>
+  <label><input type="radio" name="eng" value="ws" id="engWs">瀏覽器內建(免費、免設定,準確度普通)</label>
+  <label><input type="radio" name="eng" value="az" id="engAz">Azure 語音翻譯(較快較準、直接輸出中文,需金鑰)</label>
+  <div id="azFields">
+    <input type="password" id="azKey" placeholder="Azure 金鑰(Key 1)" autocomplete="off">
+    <input type="text" id="azRegion" placeholder="區域,例如 japaneast 或 eastasia" autocomplete="off">
+    <div class="ttl" style="margin-top:10px">斷句方式</div>
+    <label><input type="radio" name="segMs" value="sem">語意斷句(推薦)— AI 依句意切段,講者不停頓也能一句一句出,最適合舞台劇旁白</label>
+    <label><input type="radio" name="segMs" value="300">停頓 0.3 秒斷句 — 延遲低,句子較碎</label>
+    <label><input type="radio" name="segMs" value="450">停頓 0.45 秒斷句 — 平衡</label>
+    <label><input type="radio" name="segMs" value="700">停頓 0.7 秒斷句 — 句子最完整,適合對話</label>
+    <div class="hint">
+      取得免費金鑰(每月 5 小時免費):<br>
+      1. 到 <b>portal.azure.com</b> 登入(可用 Microsoft 帳號)<br>
+      2. 建立資源 → 搜尋「<b>語音服務 Speech</b>」→ 建立<br>
+      3. 區域選 <b>Japan East</b> 或 <b>East Asia</b>,定價層選 <b>Free F0</b><br>
+      4. 建立完成 → 「金鑰與端點」→ 複製 <b>金鑰1</b> 和 <b>位置/區域</b> 貼到上面<br>
+      金鑰只儲存在你這支手機的瀏覽器裡,不會上傳到任何地方。
+    </div>
+  </div>
+  <button id="saveSet">儲存</button>
+</div>
+
+<div id="steps"></div>
+
+<div id="scroller">
+  <div id="empty">
+    按下 <b>開始聆聽</b>,允許麥克風權限,<br>
+    把手機朝向聲音來源。<br>
+    中文翻譯會一句一段往下累積顯示。<br>
+    <span style="font-size:13px">斜體淡字 = 日文原文(翻譯中或翻譯失敗)<br>
+    覺得辨識太慢?點右上 <b>⚙</b> 切換更快的 Azure 引擎</span>
+  </div>
+  <div id="transcript"></div>
+</div>
+
+<div id="jaBar"></div>
+
+<footer>
+  <button id="clear">清除</button>
+  <button id="toggle">開始聆聽</button>
+</footer>
+
+<script>
+/* ═════════ 在下面兩行貼上你的 Azure 設定 ═════════
+   貼好之後 Azure 就是預設引擎,不用再進 ⚙ 設定。   */
+var AZ_KEY='';                 /* ← 在引號內貼上 金鑰 Key 1 */
+var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
+/* ═══════════════════════════════════════════════ */
+(function(){
+  var scroller=document.getElementById('scroller');
+  var transcript=document.getElementById('transcript');
+  var empty=document.getElementById('empty');
+  var toggle=document.getElementById('toggle');
+  var clearBtn=document.getElementById('clear');
+  var dot=document.getElementById('dot');
+  var stTxt=document.getElementById('stTxt');
+  var steps=document.getElementById('steps');
+  var jaBar=document.getElementById('jaBar');
+  var engLabel=document.getElementById('engLabel');
+
+  var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  var rec=null, azRec=null, active=false, wakeLock=null, firstStartShown=false;
+
+  /* ── 設定(引擎 / Azure 金鑰)──────────────── */
+  var eng='az', azKey=AZ_KEY, azRegion=AZ_REGION;
+  try{
+    eng=localStorage.getItem('eng')||'az';
+    azKey=localStorage.getItem('azKey')||AZ_KEY;
+    azRegion=localStorage.getItem('azRegion')||AZ_REGION;
+  }catch(e){}
+  function engName(){return eng==='az'?'Azure 引擎':'瀏覽器引擎';}
+  function refreshEngLabel(){engLabel.textContent='日本語 → 繁體中文('+engName()+')';}
+  refreshEngLabel();
+
+  var settings=document.getElementById('settings');
+  var engWs=document.getElementById('engWs');
+  var engAz=document.getElementById('engAz');
+  var azFields=document.getElementById('azFields');
+  var azKeyIn=document.getElementById('azKey');
+  var azRegionIn=document.getElementById('azRegion');
+  var segMs='sem';
+  try{ var sv=localStorage.getItem('segMs'); if(sv==='sem'||sv==='300'||sv==='450'||sv==='700') segMs=sv; }catch(e){}
+  function segRadios(){ return document.querySelectorAll('input[name=segMs]'); }
+
+  function syncSettingsUI(){
+    (eng==='az'?engAz:engWs).checked=true;
+    azFields.classList.toggle('show',eng==='az');
+    azKeyIn.value=azKey;
+    azRegionIn.value=azRegion;
+    Array.prototype.forEach.call(segRadios(),function(r){ r.checked=(r.value===segMs); });
+  }
+  document.getElementById('gear').addEventListener('click',function(){
+    syncSettingsUI();
+    settings.classList.toggle('open');
+  });
+  engWs.addEventListener('change',function(){azFields.classList.remove('show');});
+  engAz.addEventListener('change',function(){azFields.classList.add('show');});
+  document.getElementById('saveSet').addEventListener('click',function(){
+    var wasActive=active;
+    if(wasActive) stop();
+    eng=engAz.checked?'az':'ws';
+    azKey=azKeyIn.value.trim();
+    azRegion=azRegionIn.value.trim().toLowerCase();
+    Array.prototype.forEach.call(segRadios(),function(r){ if(r.checked) segMs=r.value; });
+    try{
+      localStorage.setItem('eng',eng);
+      localStorage.setItem('azKey',azKey);
+      localStorage.setItem('azRegion',azRegion);
+      localStorage.setItem('segMs',segMs);
+    }catch(e){}
+    refreshEngLabel();
+    try{ resetSynth(); }catch(e){}
+    settings.classList.remove('open');
+    clearSteps();
+    logStep('✓ 已切換為'+engName(),'ok');
+    setTimeout(function(){clearSteps();},2500);
+    if(wasActive) start();
+  });
+
+  /* ── 字級調整 ───────────────────────────── */
+  var fs=26;
+  try{ var saved=parseInt(localStorage.getItem('fs'),10); if(saved>=18&&saved<=44) fs=saved; }catch(e){}
+  function applyFs(){
+    document.documentElement.style.setProperty('--fs',fs+'px');
+    try{localStorage.setItem('fs',String(fs));}catch(e){}
+  }
+  applyFs();
+  document.getElementById('fsPlus').addEventListener('click',function(){ if(fs<44){fs+=3;applyFs();} });
+  document.getElementById('fsMinus').addEventListener('click',function(){ if(fs>18){fs-=3;applyFs();} });
+
+  /* ── 中文語音朗讀(只唸「已定案」的翻譯)───────
+     引擎:Azure Neural TTS(zh-TW-HsiaoChen 自然女聲,同一組金鑰)
+     沒金鑰或連線失敗時退回瀏覽器內建 TTS。
+     佇列最多保留 3 句:現場講太快時丟掉最舊的,跟上進度。 */
+  var ttsOn=false, ttsQueue=[], ttsPlaying=false, curAudio=null;
+  try{ ttsOn = localStorage.getItem('ttsOn')==='1'; }catch(e){}
+  var ttsBtn=document.getElementById('ttsBtn');
+  function ttsSync(){
+    ttsBtn.classList.toggle('on',ttsOn);
+    ttsBtn.textContent=ttsOn?'🔊':'🔇';
+  }
+  ttsSync();
+  ttsBtn.addEventListener('click',function(){
+    ttsOn=!ttsOn;
+    try{localStorage.setItem('ttsOn',ttsOn?'1':'0');}catch(e){}
+    ttsSync();
+    if(ttsOn){
+      primeAudio();
+      speakZh('語音朗讀已開啟');   // 兼作瀏覽器音訊解鎖與試聽
+      logStep('🔊 朗讀已開啟:建議戴耳機,避免手機喇叭被麥克風收音造成回圈','ok');
+      setTimeout(clearSteps,4000);
+    }else{
+      ttsQueue=[];
+      if(curAudio){try{curAudio.pause();}catch(e){} curAudio=null;}
+      try{ if(window.speechSynthesis) speechSynthesis.cancel(); }catch(e){}
+      resetSynth();
+      ttsPlaying=false;
+      ttsBtn.classList.remove('speaking');
+    }
+  });
+
+  function speakZh(text){
+    if(!ttsOn||!text) return;
+    text=String(text).trim();
+    if(!text||/^[\s\d\W]+$/.test(text)) return;   // 純符號/數字不唸
+    // 長段落拆成句子分批進佇列:每句獨立成敗,不會一整段卡死或被整段丟掉
+    var parts=text.match(/[^。!?!?…]+[。!?!?…]*/g)||[text];
+    var buf='';
+    var now=Date.now();
+    for(var i=0;i<parts.length;i++){
+      buf+=parts[i];
+      if(buf.length>=48 || i===parts.length-1){
+        if(buf.replace(/[\s\W]/g,'').length) ttsQueue.push({t:buf, ts:now});
+        buf='';
+      }
+    }
+    while(ttsQueue.length>6) ttsQueue.shift();
+    ttsPump();
+  }
+  function ttsPump(){
+    if(ttsPlaying||!ttsQueue.length) return;
+    // 時效制:排隊超過 8 秒的內容已跟不上現場,直接丟(至少留最新一句)
+    var now=Date.now();
+    while(ttsQueue.length>1 && now-ttsQueue[0].ts>8000) ttsQueue.shift();
+    var item=ttsQueue.shift(), t=item.t;
+    ttsPlaying=true;
+    ttsBtn.classList.add('speaking');
+    var done=false;
+    function finish(){
+      if(done) return;
+      done=true;
+      ttsPlaying=false;
+      ttsBtn.classList.remove('speaking');
+      if(ttsOn) ttsPump();
+    }
+    setTimeout(finish, 30000);   // 極端保險,正常不會觸發
+    azureTts(t).catch(function(){ return browserTts(t); })
+      .catch(function(){})
+      .then(finish, finish);
+  }
+
+  /* Azure Neural TTS:合成器只產生音訊資料,由我們自己的 Audio 元件播放。
+     這樣「開始聆聽」的手勢就能預先解鎖播放權限,
+     辨識回呼裡的自動朗讀才不會被瀏覽器的 autoplay 政策靜音。 */
+  var synthObj=null, audioUnlocked=false;
+  function primeAudio(){
+    // 在使用者手勢當下播一段無聲音訊,解鎖之後的程式化播放
+    try{
+      var a=new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=');
+      a.play().then(function(){audioUnlocked=true;}).catch(function(){});
+    }catch(e){}
+  }
+  function getSynth(){
+    var S=window.SpeechSDK;
+    if(!S||!azKey||!azRegion) return null;
+    if(synthObj) return synthObj;
+    try{
+      var c=S.SpeechConfig.fromSubscription(azKey,azRegion);
+      c.speechSynthesisVoiceName='zh-TW-HsiaoChenNeural';
+      try{ c.speechSynthesisOutputFormat=S.SpeechSynthesisOutputFormat.Audio24Khz48KBitRateMonoMp3; }catch(e){}
+      synthObj=new S.SpeechSynthesizer(c, null);   // null = 不用 SDK 播放器,拿音訊資料自己播
+    }catch(e){ synthObj=null; }
+    return synthObj;
+  }
+  function resetSynth(){
+    try{ if(synthObj) synthObj.close(); }catch(e){}
+    synthObj=null;
+  }
+  function playBuf(buf){
+    return new Promise(function(res){
+      try{
+        var a=new Audio(URL.createObjectURL(new Blob([buf],{type:'audio/mpeg'})));
+        curAudio=a;
+        var fin=function(){
+          try{URL.revokeObjectURL(a.src);}catch(e){}
+          if(curAudio===a) curAudio=null;
+          res();
+        };
+        a.onended=a.onerror=fin;
+        a.play().catch(fin);   // 若仍被擋,直接跳下一句,不卡佇列
+      }catch(e){ res(); }
+    });
+  }
+  function azureTts(text){
+    return new Promise(function(res,rej){
+      function go(){
+        var sy=getSynth();
+        if(!sy) return rej();
+        var S=window.SpeechSDK;
+        var settled=false;
+        // 「合成」5 秒沒回應 = 連線卡住 → 重建、換下一句;播放依實際音長
+        var guard=setTimeout(function(){
+          if(settled) return;
+          settled=true; resetSynth(); rej();
+        },5000);
+        sy.speakTextAsync(text,
+          function(r){
+            if(settled) return;
+            settled=true; clearTimeout(guard);
+            if(r && r.reason===S.ResultReason.SynthesizingAudioCompleted && r.audioData){
+              playBuf(r.audioData).then(res);
+            }else{
+              resetSynth(); rej();
+            }
+          },
+          function(){
+            if(settled) return;
+            settled=true; clearTimeout(guard);
+            resetSynth(); rej();
+          });
+      }
+      if(window.SpeechSDK) go();
+      else if(typeof loadAzureSdk==='function') loadAzureSdk().then(go,function(){rej();});
+      else rej();
+    });
+  }
+  function browserTts(text){
+    return new Promise(function(res,rej){
+      if(!window.speechSynthesis) return rej();
+      var u=new SpeechSynthesisUtterance(text);
+      u.lang='zh-TW'; u.rate=1.05;
+      var vs=speechSynthesis.getVoices().filter(function(v){return /zh[-_](TW|HK)|cmn/i.test(v.lang);});
+      var nat=vs.filter(function(v){return /natural|neural|google/i.test(v.name);})[0];
+      if(nat||vs[0]) u.voice=nat||vs[0];
+      var fin=function(){res();};
+      u.onend=u.onerror=fin;
+      setTimeout(fin, Math.min(9000, 300*text.length));  // 引擎沒回呼也照樣往下走
+      speechSynthesis.speak(u);
+    });
+  }
+
+
+  /* ── 訊息列 ─────────────────────────────── */
+  function logStep(msg,cls){
+    steps.style.display='block';
+    var d=document.createElement('div');
+    d.className='st'+(cls?' '+cls:'');
+    d.textContent=msg;
+    steps.appendChild(d);
+    while(steps.children.length>5) steps.removeChild(steps.firstChild);
+  }
+  function clearSteps(){steps.innerHTML='';steps.style.display='none';}
+
+  function setUI(on){
+    active=on;
+    toggle.textContent=on?'停止':'開始聆聽';
+    toggle.classList.toggle('on',on);
+    dot.classList.toggle('live',on);
+    stTxt.textContent=on?'聆聽中':'待機中';
+    if(!on) jaBar.textContent='';
+  }
+
+  function keepAwake(on){
+    try{
+      if(on && 'wakeLock' in navigator){
+        navigator.wakeLock.request('screen').then(function(w){wakeLock=w;}).catch(function(){});
+      }else if(wakeLock){ wakeLock.release(); wakeLock=null; }
+    }catch(e){}
+  }
+
+  function scrollDown(){scroller.scrollTop=scroller.scrollHeight;}
+
+  /* ── 翻譯(僅瀏覽器引擎需要;Azure 直接輸出中文)── */
+  function wait(ms){return new Promise(function(res){setTimeout(res,ms);});}
+  function translateReq(jaText,timeoutMs){
+    var ctrl=(typeof AbortController!=='undefined')?new AbortController():null;
+    var to=ctrl?setTimeout(function(){try{ctrl.abort();}catch(e){}},timeoutMs):null;
+    var url='https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=zh-TW&dt=t&q='+encodeURIComponent(jaText);
+    return fetch(url,ctrl?{signal:ctrl.signal}:{}).then(function(r){
+      if(to)clearTimeout(to);
+      if(!r.ok) throw new Error(r.status);
+      return r.json();
+    }).then(function(d){
+      return (d[0]||[]).map(function(s){return s[0];}).join('');
+    }).catch(function(e){
+      if(to)clearTimeout(to);
+      throw e;
+    });
+  }
+  function translateFast(t){ return translateReq(t,4000); }
+  function translateFinal(t){
+    return translateReq(t,6000)
+      .catch(function(){return wait(500).then(function(){return translateReq(t,6000);});})
+      .catch(function(){return wait(1500).then(function(){return translateReq(t,6000);});});
+  }
+
+  /* ── 字幕顯示(兩個引擎共用)───────────────
+     分段設計:
+     - 已定案的句子 = 一個 .blk 段落,寫入後永遠不再變動
+     - 辨識中的那句 = 固定一個 .blk.live 停在最下方,只有它會更新
+     → 上方文字不再被推擠,畫面不跳動
+     - 只有停在底部時才自動捲動,往上滑閱讀舊字幕時不會被拉回 */
+  var curText='', curSeq=0, curDone=false;
+  var committedLen=0, prevInterim='';
+  var lastFinalNorm='', lastFinalTime=0;
+  var HARD='。!?.!?…';
+  var SOFT='、,,';
+
+  var liveEl=null, autoScroll=true;
+  scroller.addEventListener('scroll',function(){
+    autoScroll = scroller.scrollHeight-scroller.scrollTop-scroller.clientHeight < 120;
+  });
+  function smartScroll(){ if(autoScroll) scroller.scrollTop=scroller.scrollHeight; }
+  function ensureLive(){
+    if(!liveEl){
+      empty.style.display='none';
+      liveEl=document.createElement('div');
+      liveEl.className='blk live raw';
+      liveEl.textContent='…';
+      transcript.appendChild(liveEl);
+      curDone=false;
+    }
+    return liveEl;
+  }
+  function setLive(text,isRaw){
+    var el=ensureLive();
+    if(el.textContent!==text) el.textContent=text;
+    el.classList.toggle('raw',!!isRaw);
+    smartScroll();
+  }
+  function clearLive(){ if(liveEl){liveEl.remove();liveEl=null;} }
+  function appendBlock(text,isRaw){
+    empty.style.display='none';
+    var d=document.createElement('div');
+    d.className='blk'+(isRaw?' raw':'');
+    d.textContent=text;
+    if(liveEl) transcript.insertBefore(d,liveEl);
+    else transcript.appendChild(d);
+    smartScroll();
+    return d;
+  }
+
+  function renderFinal(seg,seq,jaText){
+    translateFinal(jaText).then(function(out){
+      if(seg.dataset.seq!==String(seq)) return;
+      if(out){
+        seg.textContent=out;
+        seg.classList.remove('raw');
+        speakZh(out);
+      }
+      smartScroll();
+    }).catch(function(){
+      if(seg.dataset.seq!==String(seq)) return;
+      seg.textContent=jaText;
+      seg.classList.add('raw');
+      smartScroll();
+    });
+  }
+
+  function commitChunk(ja){
+    ja=ja.trim();
+    if(!ja) return;
+    var seg=appendBlock(ja,true);
+    curSeq++;
+    seg.dataset.seq=String(curSeq);
+    renderFinal(seg,curSeq,ja);
+  }
+
+  /* 即時尾巴翻譯管線(dirty 補送 + 逾時) */
+  var tailTimer=null, tailBusy=false, tailDirty=false, lastTailSent='';
+  function scheduleTail(){
+    if(tailTimer) return;
+    tailTimer=setTimeout(sendTail,400);
+  }
+  function tailDone(){
+    tailBusy=false;
+    if(tailDirty){ tailDirty=false; scheduleTail(); }
+  }
+  var tailTok=0;
+  function sendTail(){
+    tailTimer=null;
+    if(!liveEl||curDone) return;
+    var t=curText.slice(committedLen).trim();
+    if(!t||t===lastTailSent) return;
+    if(tailBusy){ tailDirty=true; return; }
+    tailBusy=true;
+    lastTailSent=t;
+    var myTok=++tailTok;
+    translateFast(t).then(function(out){
+      if(tailTok===myTok && !curDone && liveEl && out) setLive(out,false);
+      tailDone();
+    },function(){ tailDone(); });
+  }
+
+  function onInterim(txt){
+    if(!txt || curDone) return;
+    ensureLive();
+    jaBar.textContent='🎧 '+txt;
+    if(committedLen>txt.length) committedLen=txt.length;
+
+    var limit=txt.length-8;
+    var cut=-1, i;
+    for(i=committedLen;i<limit;i++){
+      if(HARD.indexOf(txt.charAt(i))>=0) cut=i+1;
+    }
+    if(cut<0 && txt.length-committedLen>60){
+      for(i=committedLen;i<limit;i++){
+        if(SOFT.indexOf(txt.charAt(i))>=0) cut=i+1;
+      }
+      if(cut<0) cut=committedLen+40;
+    }
+    var committed=false;
+    if(cut>committedLen && (prevInterim.slice(0,cut)===txt.slice(0,cut) || txt.length-cut>20)){
+      commitChunk(txt.slice(committedLen,cut));
+      committedLen=cut;
+      committed=true;
+      lastTailSent='';
+    }
+    prevInterim=txt;
+    curText=txt;
+
+    var tail=txt.slice(committedLen).trim();
+    if(!tail){
+      setLive('…',true);
+      lastTailSent='';
+      return;
+    }
+    if(committed || liveEl.classList.contains('raw') || liveEl.textContent==='…'){
+      setLive(tail,true);
+    }
+    scheduleTail();
+  }
+
+  function onFinal(txt){
+    if(!txt) return;
+    var now=Date.now();
+    var n=txt.replace(/\s+/g,'');
+    if(n===lastFinalNorm && now-lastFinalTime<6000){ resetCur(); return; }
+    lastFinalNorm=n; lastFinalTime=now;
+
+    if(tailTimer){clearTimeout(tailTimer);tailTimer=null;}
+    tailDirty=false; lastTailSent=''; tailTok++;
+    if(committedLen>txt.length) committedLen=txt.length;
+    var rem=txt.slice(committedLen).trim();
+
+    clearLive();
+    if(rem){
+      var seg=appendBlock(rem,true);
+      curSeq++;
+      seg.dataset.seq=String(curSeq);
+      renderFinal(seg,curSeq,rem);
+    }
+    curText=''; curDone=false;
+    committedLen=0; prevInterim='';
+    jaBar.textContent='';
+  }
+
+  function resetCur(){
+    if(tailTimer){clearTimeout(tailTimer);tailTimer=null;}
+    tailDirty=false; lastTailSent=''; tailTok++;
+    clearLive();
+    curText=''; curDone=false;
+    committedLen=0; prevInterim='';
+  }
+
+  function flushPending(){
+    if(curText && !curDone){
+      var t=curText;
+      curText='';
+      onFinal(t);
+    }else{
+      resetCur();
+    }
+  }
+
+  /* ── Azure 引擎的顯示(穩定前綴,只增不改)──
+     只顯示「連續兩次更新都相同」的穩定內容,還在變動的尾巴不顯示;
+     穩定內容一寫到句號就立刻升格成白字定案段落。
+     畫面上的字只會往後長,永遠不會回頭重寫 → 閱讀不再跳動。
+     代價:白字可能與 Azure 最終版有些微用詞差異(重視即時性的取捨)。 */
+  var azLastUi=0, azPend=null, azPendTimer=null;
+  var dispCommitted='';   // 已升格成白字段落的前綴
+  var dispShown='';       // live 區已顯示的穩定文字(只增不減)
+  var dispPrevZh='';      // 上一次的中間翻譯(算穩定用)
+
+  function azResetDisp(){ dispCommitted=''; dispShown=''; dispPrevZh=''; }
+
+  function azFlushUi(){
+    if(azPendTimer){clearTimeout(azPendTimer);azPendTimer=null;}
+    if(!azPend) return;
+    azLastUi=Date.now();
+    var p=azPend; azPend=null;
+    if(!p.zh){ if(p.ja) setLive(p.ja,true); return; }
+    var zh=p.zh;
+
+    // 1. 穩定長度 = 與上一次更新的共同前綴
+    var st=0, mx=Math.min(zh.length, dispPrevZh.length);
+    while(st<mx && zh.charAt(st)===dispPrevZh.charAt(st)) st++;
+    dispPrevZh=zh;
+
+    // 2. 前文若被 Azure 改寫到已顯示的範圍 → 已顯示內容維持不動(不回退)
+    var base=dispCommitted.length + dispShown.length;
+    if(st<=base){ return; }
+
+    // 3. 穩定新增區
+    var grow=zh.slice(base, st);
+
+    // 4. 其中已到句號的部分 → 立刻升格白字段落
+    var cut=-1;
+    for(var i=grow.length-1;i>=0;i--){
+      if('。!?!?…'.indexOf(grow.charAt(i))>=0){ cut=i+1; break; }
+    }
+    if(cut>0){
+      var sent=(dispShown+grow.slice(0,cut)).trim();
+      if(sent) appendBlock(sent,false);
+      dispCommitted=zh.slice(0, base+cut);
+      dispShown='';
+      grow=grow.slice(cut);
+    }
+
+    // 5. 剩下的穩定字尾接在 live 區(只會 append)
+    if(grow){
+      dispShown+=grow;
+    }
+    if(dispShown) setLive(dispShown,false);
+    else if(!zh.slice(dispCommitted.length)) clearLive();
+    else setLive('…',true);
+  }
+  /* 搶先朗讀:中間結果裡「連續兩次更新都相同」且已到句號的句子先唸,
+     不等整段定案;spkPrefix 記錄已唸過的前綴,定案時只補唸剩下的尾巴 */
+  var spkPrefix='', prevZhInterim='';
+  function ttsInterim(zh){
+    if(!ttsOn||!zh) return;
+    if(spkPrefix && zh.indexOf(spkPrefix)!==0){ prevZhInterim=zh; return; } // 前文被改寫,等定案
+    var stableLen=0;
+    var mx=Math.min(zh.length, prevZhInterim.length);
+    while(stableLen<mx && zh.charAt(stableLen)===prevZhInterim.charAt(stableLen)) stableLen++;
+    var seg=zh.slice(spkPrefix.length, stableLen);
+    var cut=-1;
+    for(var i=seg.length-1;i>=0;i--){
+      if('。!?!?…'.indexOf(seg.charAt(i))>=0){ cut=i+1; break; }
+    }
+    if(cut>0){
+      var say=seg.slice(0,cut);
+      if(say.replace(/[\s。,、!?!?…]/g,'').length>=4){
+        speakZh(say);
+        spkPrefix=zh.slice(0, spkPrefix.length+cut);
+      }
+    }
+    prevZhInterim=zh;
+  }
+
+  function azInterim(ja,zh){
+    if(!ja&&!zh) return;
+    jaBar.textContent='🎧 '+(ja||'');
+    azPend={ja:ja,zh:zh};
+    if(zh) ttsInterim(zh);
+    var d=Date.now()-azLastUi;
+    if(d>=300) azFlushUi();
+    else if(!azPendTimer) azPendTimer=setTimeout(azFlushUi,300-d);
+  }
+  function azFinal(ja,zh){
+    if(azPendTimer){clearTimeout(azPendTimer);azPendTimer=null;}
+    azPend=null;
+    if(!ja&&!zh) return;
+    clearLive();
+    if(zh){
+      // 只補「還沒升格成白字」的尾巴,已升格的句子不重複
+      var tail=zh;
+      if(dispCommitted){
+        if(zh.indexOf(dispCommitted)===0){
+          tail=zh.slice(dispCommitted.length);
+        }else{
+          var nn=0, mm=Math.min(zh.length, dispCommitted.length);
+          while(nn<mm && zh.charAt(nn)===dispCommitted.charAt(nn)) nn++;
+          tail=zh.slice(nn);
+        }
+      }
+      if(tail.replace(/[\s。,、!?!?…]/g,'')) appendBlock(tail.trim(),false);
+      var rest=zh;
+      if(spkPrefix){
+        if(zh.indexOf(spkPrefix)===0){
+          rest=zh.slice(spkPrefix.length);
+        }else{
+          var n=0, mx=Math.min(zh.length, spkPrefix.length);
+          while(n<mx && zh.charAt(n)===spkPrefix.charAt(n)) n++;
+          rest=zh.slice(n);
+        }
+      }
+      if(rest.replace(/[\s。,、!?!?…]/g,'')) speakZh(rest);
+    }
+    else appendBlock(ja,true);
+    spkPrefix=''; prevZhInterim='';
+    azResetDisp();
+    jaBar.textContent='';
+  }
+
+  /* ── 看門狗(僅瀏覽器引擎)────────────────── */
+  var lastResultAt=0, watchdog=null;
+  function markResult(){lastResultAt=Date.now();}
+  function startWatchdog(){
+    stopWatchdog();
+    markResult();
+    watchdog=setInterval(function(){
+      if(!active) return;
+      if(Date.now()-lastResultAt>15000){
+        markResult();
+        stTxt.textContent='聆聽中(重新連線…)';
+        try{rec.stop();}catch(e){}
+      }
+    },4000);
+  }
+  function stopWatchdog(){
+    if(watchdog){clearInterval(watchdog);watchdog=null;}
+  }
+
+  /* ── 瀏覽器引擎(Web Speech)──────────────── */
+  function makeRec(){
+    var r=new SR();
+    r.lang='ja-JP';
+    r.continuous=true;
+    r.interimResults=true;
+    r.maxAlternatives=1;
+
+    r.onstart=function(){
+      markResult();
+      if(!firstStartShown){
+        firstStartShown=true;
+        clearSteps();
+        logStep('✓ 語音辨識已啟動,請說話','ok');
+        setTimeout(function(){clearSteps();},3000);
+      }
+    };
+    r.onaudiostart=function(){
+      if(active) stTxt.textContent='聆聽中(收音正常)';
+    };
+    r.onresult=function(ev){
+      markResult();
+      var interim='';
+      for(var i=ev.resultIndex;i<ev.results.length;i++){
+        var res=ev.results[i];
+        var txt=res[0].transcript.trim();
+        if(!txt) continue;
+        if(res.isFinal){ onFinal(txt); }
+        else{ interim+=txt; }
+      }
+      if(interim) onInterim(interim);
+    };
+    r.onerror=function(ev){
+      if(ev.error==='not-allowed'||ev.error==='service-not-allowed'){
+        logStep('✕ 麥克風被拒絕('+ev.error+'):點網址列左邊圖示 → 權限 → 麥克風改為允許','bad');
+        stop();
+      }else if(ev.error==='network'){
+        logStep('✕ 辨識服務連線不穩(network),自動重試中…','bad');
+      }else if(ev.error!=='no-speech'&&ev.error!=='aborted'){
+        logStep('✕ 辨識錯誤:'+ev.error,'bad');
+      }
+    };
+    r.onend=function(){
+      flushPending();
+      if(active && eng==='ws'){
+        try{r.start();}catch(e){
+          setTimeout(function(){ if(active&&eng==='ws'){try{r.start();}catch(e2){}} },300);
+        }
+      }
+    };
+    return r;
+  }
+
+  function startWS(){
+    if(!SR){
+      logStep('✕ 這個瀏覽器不支援語音辨識,請用 Android 的 Chrome,或點 ⚙ 改用 Azure 引擎','bad');
+      return;
+    }
+    if(!rec) rec=makeRec();
+    try{rec.start();}catch(e){}
+    setUI(true);
+    keepAwake(true);
+    startWatchdog();
+  }
+
+  /* ── Azure 引擎(語音翻譯,直接輸出繁中)──── */
+  function loadAzureSdk(){
+    if(window.SpeechSDK) return Promise.resolve();
+    return new Promise(function(res,rej){
+      var s=document.createElement('script');
+      s.src='https://cdn.jsdelivr.net/npm/microsoft-cognitiveservices-speech-sdk@latest/distrib/browser/microsoft.cognitiveservices.speech.sdk.bundle-min.js';
+      s.onload=function(){ window.SpeechSDK?res():rej(new Error('sdk')); };
+      s.onerror=function(){ rej(new Error('load')); };
+      document.head.appendChild(s);
+    });
+  }
+
+  function startAzure(){
+    if(!azKey||!azRegion){
+      logStep('✕ 尚未設定 Azure 金鑰與區域,點右上 ⚙ 設定','bad');
+      syncSettingsUI();
+      settings.classList.add('open');
+      return;
+    }
+    logStep('正在載入 Azure 語音引擎…');
+    loadAzureSdk().then(function(){
+      var S=window.SpeechSDK;
+      var cfg=S.SpeechTranslationConfig.fromSubscription(azKey,azRegion);
+      cfg.speechRecognitionLanguage='ja-JP';
+      cfg.addTargetLanguage('zh-Hant');
+      // 斷句方式(⚙ 可調):
+      //  sem = Semantic 語意斷句(AI 依句意切,講者不停頓也會切段)
+      //  數字 = 停頓多少毫秒就定案(JS SDK 對 <500ms 不一定可靠,故推薦語意斷句)
+      try{
+        if(segMs==='sem' && S.PropertyId && S.PropertyId.Speech_SegmentationStrategy!==undefined){
+          cfg.setProperty(S.PropertyId.Speech_SegmentationStrategy,'Semantic');
+        }else{
+          cfg.setProperty(S.PropertyId.Speech_SegmentationSilenceTimeoutMs, segMs==='sem'?'300':segMs);
+        }
+      }catch(err){}
+      // 要求服務端先穩定翻譯部分結果(自動略去尾端未定的字),畫面與朗讀都更穩
+      try{ cfg.setProperty(S.PropertyId.SpeechServiceResponse_TranslationRequestStablePartialResult,'true'); }catch(err){}
+      var audio=S.AudioConfig.fromDefaultMicrophoneInput();
+      azRec=new S.TranslationRecognizer(cfg,audio);
+
+      azRec.recognizing=function(s,e){
+        var ja=e.result.text||'', zh='';
+        try{ zh=e.result.translations.get('zh-Hant')||''; }catch(err){}
+        azInterim(ja,zh);
+      };
+      azRec.recognized=function(s,e){
+        if(e.result.reason===S.ResultReason.TranslatedSpeech){
+          var ja=e.result.text||'', zh='';
+          try{ zh=e.result.translations.get('zh-Hant')||''; }catch(err){}
+          azFinal(ja,zh);
+        }
+      };
+      azRec.canceled=function(s,e){
+        if(e.errorDetails){
+          var msg=String(e.errorDetails);
+          logStep('✕ Azure:'+msg.slice(0,120),'bad');
+          if(msg.indexOf('401')>=0||msg.indexOf('Authentication')>=0||msg.indexOf('WebSocket')>=0){
+            logStep('金鑰或區域可能不正確,點 ⚙ 檢查(區域要用英文小寫,如 japaneast)','bad');
+          }
+        }
+        if(active&&eng==='az'){
+          setTimeout(function(){
+            if(active&&eng==='az'&&azRec){ try{azRec.startContinuousRecognitionAsync();}catch(er){} }
+          },1500);
+        }
+      };
+      azRec.sessionStopped=function(){
+        if(active&&eng==='az'&&azRec){ try{azRec.startContinuousRecognitionAsync();}catch(er){} }
+      };
+
+      azRec.startContinuousRecognitionAsync(function(){
+        clearSteps();
+        logStep('✓ Azure 語音翻譯已啟動(直接輸出繁體中文)','ok');
+        setTimeout(function(){clearSteps();},3000);
+        setUI(true);
+        keepAwake(true);
+        stTxt.textContent='聆聽中(Azure)';
+      },function(err){
+        logStep('✕ Azure 啟動失敗:'+String(err).slice(0,120),'bad');
+      });
+    }).catch(function(){
+      logStep('✕ 無法載入 Azure SDK,請確認網路後再試','bad');
+    });
+  }
+
+  /* ── 啟動/停止 ──────────────────────────── */
+  function start(){
+    clearSteps();
+    firstStartShown=false;
+
+    if(!window.isSecureContext){
+      logStep('✕ 網址是 '+location.protocol+'// 開頭,無法使用麥克風','bad');
+      logStep('必須用 https:// 網址開啟(例如 GitHub Pages),不能直接開檔案','bad');
+      return;
+    }
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+      logStep('✕ 這個環境無法存取麥克風(可能是內嵌視窗),請用 Chrome 直接開網址','bad');
+      return;
+    }
+
+    logStep('1. 正在要求麥克風權限…(此時應跳出詢問視窗)');
+    navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
+      stream.getTracks().forEach(function(t){t.stop();});
+      clearSteps();
+      if(eng==='az') startAzure();
+      else startWS();
+    }).catch(function(err){
+      if(err.name==='NotAllowedError'||err.name==='SecurityError'){
+        logStep('✕ 權限被拒絕('+err.name+')','bad');
+        logStep('解法A:點網址列左邊圖示 → 權限 → 重設,重新整理後再按開始','bad');
+        logStep('解法B:手機設定 → 應用程式 → Chrome → 權限 → 麥克風 → 允許','bad');
+      }else if(err.name==='NotFoundError'){
+        logStep('✕ 找不到麥克風裝置('+err.name+')','bad');
+      }else{
+        logStep('✕ 麥克風啟動失敗:'+err.name+' '+err.message,'bad');
+      }
+    });
+  }
+
+  function stop(){
+    setUI(false);
+    keepAwake(false);
+    stopWatchdog();
+    if(rec){try{rec.stop();}catch(e){}}
+    if(azRec){
+      try{
+        azRec.stopContinuousRecognitionAsync(function(){
+          try{azRec.close();}catch(e){}
+          azRec=null;
+        },function(){ azRec=null; });
+      }catch(e){ azRec=null; }
+    }
+  }
+
+  toggle.addEventListener('click',function(){
+    if(!active) primeAudio();   // 用這個手勢解鎖之後的自動朗讀
+    active?stop():start();
+  });
+
+  clearBtn.addEventListener('click',function(){
+    transcript.innerHTML='';
+    jaBar.textContent='';
+    resetCur();
+    lastFinalNorm='';
+    empty.style.display='';
+    clearSteps();
+  });
+
+  document.addEventListener('visibilitychange',function(){
+    if(!document.hidden && active){
+      keepAwake(true);
+      if(eng==='ws'&&rec){ markResult(); try{rec.start();}catch(e){} }
+    }
+  });
+})();
+</script>
+</body>
+</html>
