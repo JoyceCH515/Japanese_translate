@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>日語即時翻譯</title>
+<style>
+  :root{
+    --bg:#0d1021; --gold:#f5c34d; --ink:#f4f2ec;
+    --ja:#8f96b8; --line:#262b4a; --err:#ff8080; --ok:#7ee0a3;
+    --fs:26px;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  header{
+    padding:12px 16px 10px; display:flex; align-items:center;
+    justify-content:space-between; border-bottom:1px solid var(--line); flex-shrink:0; gap:8px;
+  }
+  header h1{font-size:15px;font-weight:700;letter-spacing:.12em;color:var(--gold)}
+  header .sub{font-size:11px;color:var(--ja);letter-spacing:.08em;margin-top:2px}
+  #hRight{display:flex;align-items:center;gap:8px}
+  #status{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ja)}
+  #dot{width:9px;height:9px;border-radius:50%;background:#4a5070;transition:background .2s}
+  #dot.live{background:var(--gold);animation:pulse 1.4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(245,195,77,.55)}50%{box-shadow:0 0 0 7px rgba(245,195,77,0)}}
+  @media (prefers-reduced-motion:reduce){#dot.live{animation:none}}
+  .fsBtn{
+    width:38px;height:38px;border-radius:10px;background:none;cursor:pointer;
+    border:1px solid var(--line);color:var(--ink);font-family:inherit;font-weight:700;
+  }
+  #fsMinus{font-size:14px}
+  #fsPlus{font-size:19px}
+  #gear{font-size:17px}
+
+  #steps{
+    flex-shrink:0; padding:10px 16px; border-bottom:1px solid var(--line);
+    font-size:14px; line-height:1.9; display:none;
+  }
+  #steps .st{color:var(--ja)}
+  #steps .st.ok{color:var(--ok)}
+  #steps .st.bad{color:var(--err)}
+
+  /* 設定面板 */
+  #settings{
+    flex-shrink:0; border-bottom:1px solid var(--line);
+    padding:14px 16px; display:none; font-size:14px; line-height:1.8;
+  }
+  #settings.open{display:block}
+  #settings .ttl{color:var(--gold);font-weight:700;letter-spacing:.08em;margin-bottom:6px}
+  #settings label{display:block;margin:4px 0;color:var(--ink)}
+  #settings input[type=radio]{margin-right:8px;transform:scale(1.2)}
+  #settings input[type=text],#settings input[type=password]{
+    width:100%;margin:5px 0;padding:10px 12px;border-radius:9px;
+    border:1px solid var(--line);background:#141833;color:var(--ink);
+    font-family:inherit;font-size:14px;
+  }
+  #settings .hint{color:var(--ja);font-size:12px;line-height:1.7;margin:6px 0}
+  #settings .hint b{color:var(--ink)}
+  #saveSet{
+    margin-top:8px;padding:10px 22px;border:none;border-radius:10px;
+    background:var(--gold);color:#211a05;font-weight:700;font-family:inherit;
+    font-size:14px;cursor:pointer;letter-spacing:.1em;
+  }
+  #azFields{display:none;margin-top:4px}
+  #azFields.show{display:block}
+
+  #scroller{
+    flex:1; overflow-y:auto; padding:18px 18px 12px;
+  }
+  #empty{
+    text-align:center;color:var(--ja);font-size:16px;line-height:2;
+    padding:40px 26px 0;
+  }
+  #empty b{color:var(--ink);font-weight:700}
+  #transcript{
+    font-size:var(--fs); font-weight:500; line-height:1.65; color:var(--ink);
+    word-break:break-word;
+  }
+  #transcript .blk{
+    margin:0 0 14px; padding:0 0 12px;
+    border-bottom:1px dashed rgba(143,150,184,.22);
+  }
+  #transcript .blk.raw{color:#b9c0e0;font-weight:400;font-style:italic}
+  #transcript .blk.live{color:#cdd3ec;border-bottom:none;min-height:1.7em}
+
+  #jaBar{
+    flex-shrink:0; min-height:22px;
+    padding:8px 18px; border-top:1px solid var(--line);
+    font-size:16px; color:var(--ja); line-height:1.5;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  #jaBar:empty{display:none}
+
+  footer{
+    flex-shrink:0; padding:10px 16px calc(14px + env(safe-area-inset-bottom));
+    display:flex; gap:10px; align-items:center;
+    border-top:1px solid var(--line); background:var(--bg);
+  }
+  #toggle{
+    flex:1;height:56px;border:none;border-radius:28px;
+    font-size:18px;font-weight:700;letter-spacing:.15em;font-family:inherit;cursor:pointer;
+    background:var(--gold);color:#211a05;transition:background .15s,color .15s;
+  }
+  #toggle.on{background:#3a2f3f;color:var(--err);border:1px solid rgba(255,128,128,.4)}
+  #clear{
+    width:56px;height:56px;border-radius:50%;background:none;
+    border:1px solid var(--line);color:var(--ja);font-size:12px;font-family:inherit;cursor:pointer;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>日語即時翻譯</h1>
+    <div class="sub" id="engLabel">日本語 → 繁體中文</div>
+  </div>
+  <div id="hRight">
+    <button id="fsMinus" class="fsBtn">A−</button>
+    <button id="fsPlus" class="fsBtn">A＋</button>
+    <button id="gear" class="fsBtn">⚙</button>
+    <div id="status"><span id="dot"></span><span id="stTxt">待機中</span></div>
+  </div>
+</header>
+
+<div id="settings">
+  <div class="ttl">辨識引擎</div>
+  <label><input type="radio" name="eng" value="ws" id="engWs">瀏覽器內建(免費、免設定,準確度普通)</label>
+  <label><input type="radio" name="eng" value="az" id="engAz">Azure 語音翻譯(較快較準、直接輸出中文,需金鑰)</label>
+  <div id="azFields">
+    <input type="password" id="azKey" placeholder="Azure 金鑰(Key 1)" autocomplete="off">
+    <input type="text" id="azRegion" placeholder="區域,例如 japaneast 或 eastasia" autocomplete="off">
+    <div class="hint">
+      取得免費金鑰(每月 5 小時免費):<br>
+      1. 到 <b>portal.azure.com</b> 登入(可用 Microsoft 帳號)<br>
+      2. 建立資源 → 搜尋「<b>語音服務 Speech</b>」→ 建立<br>
+      3. 區域選 <b>Japan East</b> 或 <b>East Asia</b>,定價層選 <b>Free F0</b><br>
+      4. 建立完成 → 「金鑰與端點」→ 複製 <b>金鑰1</b> 和 <b>位置/區域</b> 貼到上面<br>
+      金鑰只儲存在你這支手機的瀏覽器裡,不會上傳到任何地方。
+    </div>
+  </div>
+  <button id="saveSet">儲存</button>
+</div>
+
+<div id="steps"></div>
+
+<div id="scroller">
+  <div id="empty">
+    按下 <b>開始聆聽</b>,允許麥克風權限,<br>
+    把手機朝向聲音來源。<br>
+    中文翻譯會一句一段往下累積顯示。<br>
+    <span style="font-size:13px">斜體淡字 = 日文原文(翻譯中或翻譯失敗)<br>
+    覺得辨識太慢?點右上 <b>⚙</b> 切換更快的 Azure 引擎</span>
+  </div>
+  <div id="transcript"></div>
+</div>
+
+<div id="jaBar"></div>
+
+<footer>
+  <button id="clear">清除</button>
+  <button id="toggle">開始聆聽</button>
+</footer>
+
+<script>
+/* ═════════ 在下面兩行貼上你的 Azure 設定 ═════════
+   貼好之後 Azure 就是預設引擎,不用再進 ⚙ 設定。   */
+var AZ_KEY='';                 /* ← 在引號內貼上 金鑰 Key 1 */
+var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
+/* ═══════════════════════════════════════════════ */
+(function(){
+  var scroller=document.getElementById('scroller');
+  var transcript=document.getElementById('transcript');
+  var empty=document.getElementById('empty');
+  var toggle=document.getElementById('toggle');
+  var clearBtn=document.getElementById('clear');
+  var dot=document.getElementById('dot');
+  var stTxt=document.getElementById('stTxt');
+  var steps=document.getElementById('steps');
+  var jaBar=document.getElementById('jaBar');
+  var engLabel=document.getElementById('engLabel');
+
+  var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  var rec=null, azRec=null, active=false, wakeLock=null, firstStartShown=false;
+
+  /* ── 設定(引擎 / Azure 金鑰)──────────────── */
+  var eng='az', azKey=AZ_KEY, azRegion=AZ_REGION;
+  try{
+    eng=localStorage.getItem('eng')||'az';
+    azKey=localStorage.getItem('azKey')||AZ_KEY;
+    azRegion=localStorage.getItem('azRegion')||AZ_REGION;
+  }catch(e){}
+  function engName(){return eng==='az'?'Azure 引擎':'瀏覽器引擎';}
+  function refreshEngLabel(){engLabel.textContent='日本語 → 繁體中文('+engName()+')';}
+  refreshEngLabel();
+
+  var settings=document.getElementById('settings');
+  var engWs=document.getElementById('engWs');
+  var engAz=document.getElementById('engAz');
+  var azFields=document.getElementById('azFields');
+  var azKeyIn=document.getElementById('azKey');
+  var azRegionIn=document.getElementById('azRegion');
+
+  function syncSettingsUI(){
+    (eng==='az'?engAz:engWs).checked=true;
+    azFields.classList.toggle('show',eng==='az');
+    azKeyIn.value=azKey;
+    azRegionIn.value=azRegion;
+  }
+  document.getElementById('gear').addEventListener('click',function(){
+    syncSettingsUI();
+    settings.classList.toggle('open');
+  });
+  engWs.addEventListener('change',function(){azFields.classList.remove('show');});
+  engAz.addEventListener('change',function(){azFields.classList.add('show');});
+  document.getElementById('saveSet').addEventListener('click',function(){
+    var wasActive=active;
+    if(wasActive) stop();
+    eng=engAz.checked?'az':'ws';
+    azKey=azKeyIn.value.trim();
+    azRegion=azRegionIn.value.trim().toLowerCase();
+    try{
+      localStorage.setItem('eng',eng);
+      localStorage.setItem('azKey',azKey);
+      localStorage.setItem('azRegion',azRegion);
+    }catch(e){}
+    refreshEngLabel();
+    settings.classList.remove('open');
+    clearSteps();
+    logStep('✓ 已切換為'+engName(),'ok');
+    setTimeout(function(){clearSteps();},2500);
+    if(wasActive) start();
+  });
+
+  /* ── 字級調整 ───────────────────────────── */
+  var fs=26;
+  try{ var saved=parseInt(localStorage.getItem('fs'),10); if(saved>=18&&saved<=44) fs=saved; }catch(e){}
+  function applyFs(){
+    document.documentElement.style.setProperty('--fs',fs+'px');
+    try{localStorage.setItem('fs',String(fs));}catch(e){}
+  }
+  applyFs();
+  document.getElementById('fsPlus').addEventListener('click',function(){ if(fs<44){fs+=3;applyFs();} });
+  document.getElementById('fsMinus').addEventListener('click',function(){ if(fs>18){fs-=3;applyFs();} });
+
+  /* ── 訊息列 ─────────────────────────────── */
+  function logStep(msg,cls){
+    steps.style.display='block';
+    var d=document.createElement('div');
+    d.className='st'+(cls?' '+cls:'');
+    d.textContent=msg;
+    steps.appendChild(d);
+    while(steps.children.length>5) steps.removeChild(steps.firstChild);
+  }
+  function clearSteps(){steps.innerHTML='';steps.style.display='none';}
+
+  function setUI(on){
+    active=on;
+    toggle.textContent=on?'停止':'開始聆聽';
+    toggle.classList.toggle('on',on);
+    dot.classList.toggle('live',on);
+    stTxt.textContent=on?'聆聽中':'待機中';
+    if(!on) jaBar.textContent='';
+  }
+
+  function keepAwake(on){
+    try{
+      if(on && 'wakeLock' in navigator){
+        navigator.wakeLock.request('screen').then(function(w){wakeLock=w;}).catch(function(){});
+      }else if(wakeLock){ wakeLock.release(); wakeLock=null; }
+    }catch(e){}
+  }
+
+  function scrollDown(){scroller.scrollTop=scroller.scrollHeight;}
+
+  /* ── 翻譯(僅瀏覽器引擎需要;Azure 直接輸出中文)── */
+  function wait(ms){return new Promise(function(res){setTimeout(res,ms);});}
+  function translateReq(jaText,timeoutMs){
+    var ctrl=(typeof AbortController!=='undefined')?new AbortController():null;
+    var to=ctrl?setTimeout(function(){try{ctrl.abort();}catch(e){}},timeoutMs):null;
+    var url='https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=zh-TW&dt=t&q='+encodeURIComponent(jaText);
+    return fetch(url,ctrl?{signal:ctrl.signal}:{}).then(function(r){
+      if(to)clearTimeout(to);
+      if(!r.ok) throw new Error(r.status);
+      return r.json();
+    }).then(function(d){
+      return (d[0]||[]).map(function(s){return s[0];}).join('');
+    }).catch(function(e){
+      if(to)clearTimeout(to);
+      throw e;
+    });
+  }
+  function translateFast(t){ return translateReq(t,4000); }
+  function translateFinal(t){
+    return translateReq(t,6000)
+      .catch(function(){return wait(500).then(function(){return translateReq(t,6000);});})
+      .catch(function(){return wait(1500).then(function(){return translateReq(t,6000);});});
+  }
+
+  /* ── 字幕顯示(兩個引擎共用)───────────────
+     分段設計:
+     - 已定案的句子 = 一個 .blk 段落,寫入後永遠不再變動
+     - 辨識中的那句 = 固定一個 .blk.live 停在最下方,只有它會更新
+     → 上方文字不再被推擠,畫面不跳動
+     - 只有停在底部時才自動捲動,往上滑閱讀舊字幕時不會被拉回 */
+  var curText='', curSeq=0, curDone=false;
+  var committedLen=0, prevInterim='';
+  var lastFinalNorm='', lastFinalTime=0;
+  var HARD='。!?.!?…';
+  var SOFT='、,,';
+
+  var liveEl=null, autoScroll=true;
+  scroller.addEventListener('scroll',function(){
+    autoScroll = scroller.scrollHeight-scroller.scrollTop-scroller.clientHeight < 120;
+  });
+  function smartScroll(){ if(autoScroll) scroller.scrollTop=scroller.scrollHeight; }
+  function ensureLive(){
+    if(!liveEl){
+      empty.style.display='none';
+      liveEl=document.createElement('div');
+      liveEl.className='blk live raw';
+      liveEl.textContent='…';
+      transcript.appendChild(liveEl);
+      curDone=false;
+    }
+    return liveEl;
+  }
+  function setLive(text,isRaw){
+    var el=ensureLive();
+    if(el.textContent!==text) el.textContent=text;
+    el.classList.toggle('raw',!!isRaw);
+    smartScroll();
+  }
+  function clearLive(){ if(liveEl){liveEl.remove();liveEl=null;} }
+  function appendBlock(text,isRaw){
+    empty.style.display='none';
+    var d=document.createElement('div');
+    d.className='blk'+(isRaw?' raw':'');
+    d.textContent=text;
+    if(liveEl) transcript.insertBefore(d,liveEl);
+    else transcript.appendChild(d);
+    smartScroll();
+    return d;
+  }
+
+  function renderFinal(seg,seq,jaText){
+    translateFinal(jaText).then(function(out){
+      if(seg.dataset.seq!==String(seq)) return;
+      if(out){
+        seg.textContent=out;
+        seg.classList.remove('raw');
+      }
+      smartScroll();
+    }).catch(function(){
+      if(seg.dataset.seq!==String(seq)) return;
+      seg.textContent=jaText;
+      seg.classList.add('raw');
+      smartScroll();
+    });
+  }
+
+  function commitChunk(ja){
+    ja=ja.trim();
+    if(!ja) return;
+    var seg=appendBlock(ja,true);
+    curSeq++;
+    seg.dataset.seq=String(curSeq);
+    renderFinal(seg,curSeq,ja);
+  }
+
+  /* 即時尾巴翻譯管線(dirty 補送 + 逾時) */
+  var tailTimer=null, tailBusy=false, tailDirty=false, lastTailSent='';
+  function scheduleTail(){
+    if(tailTimer) return;
+    tailTimer=setTimeout(sendTail,400);
+  }
+  function tailDone(){
+    tailBusy=false;
+    if(tailDirty){ tailDirty=false; scheduleTail(); }
+  }
+  var tailTok=0;
+  function sendTail(){
+    tailTimer=null;
+    if(!liveEl||curDone) return;
+    var t=curText.slice(committedLen).trim();
+    if(!t||t===lastTailSent) return;
+    if(tailBusy){ tailDirty=true; return; }
+    tailBusy=true;
+    lastTailSent=t;
+    var myTok=++tailTok;
+    translateFast(t).then(function(out){
+      if(tailTok===myTok && !curDone && liveEl && out) setLive(out,false);
+      tailDone();
+    },function(){ tailDone(); });
+  }
+
+  function onInterim(txt){
+    if(!txt || curDone) return;
+    ensureLive();
+    jaBar.textContent='🎧 '+txt;
+    if(committedLen>txt.length) committedLen=txt.length;
+
+    var limit=txt.length-8;
+    var cut=-1, i;
+    for(i=committedLen;i<limit;i++){
+      if(HARD.indexOf(txt.charAt(i))>=0) cut=i+1;
+    }
+    if(cut<0 && txt.length-committedLen>60){
+      for(i=committedLen;i<limit;i++){
+        if(SOFT.indexOf(txt.charAt(i))>=0) cut=i+1;
+      }
+      if(cut<0) cut=committedLen+40;
+    }
+    var committed=false;
+    if(cut>committedLen && (prevInterim.slice(0,cut)===txt.slice(0,cut) || txt.length-cut>20)){
+      commitChunk(txt.slice(committedLen,cut));
+      committedLen=cut;
+      committed=true;
+      lastTailSent='';
+    }
+    prevInterim=txt;
+    curText=txt;
+
+    var tail=txt.slice(committedLen).trim();
+    if(!tail){
+      setLive('…',true);
+      lastTailSent='';
+      return;
+    }
+    if(committed || liveEl.classList.contains('raw') || liveEl.textContent==='…'){
+      setLive(tail,true);
+    }
+    scheduleTail();
+  }
+
+  function onFinal(txt){
+    if(!txt) return;
+    var now=Date.now();
+    var n=txt.replace(/\s+/g,'');
+    if(n===lastFinalNorm && now-lastFinalTime<6000){ resetCur(); return; }
+    lastFinalNorm=n; lastFinalTime=now;
+
+    if(tailTimer){clearTimeout(tailTimer);tailTimer=null;}
+    tailDirty=false; lastTailSent=''; tailTok++;
+    if(committedLen>txt.length) committedLen=txt.length;
+    var rem=txt.slice(committedLen).trim();
+
+    clearLive();
+    if(rem){
+      var seg=appendBlock(rem,true);
+      curSeq++;
+      seg.dataset.seq=String(curSeq);
+      renderFinal(seg,curSeq,rem);
+    }
+    curText=''; curDone=false;
+    committedLen=0; prevInterim='';
+    jaBar.textContent='';
+  }
+
+  function resetCur(){
+    if(tailTimer){clearTimeout(tailTimer);tailTimer=null;}
+    tailDirty=false; lastTailSent=''; tailTok++;
+    clearLive();
+    curText=''; curDone=false;
+    committedLen=0; prevInterim='';
+  }
+
+  function flushPending(){
+    if(curText && !curDone){
+      var t=curText;
+      curText='';
+      onFinal(t);
+    }else{
+      resetCur();
+    }
+  }
+
+  /* ── Azure 引擎的顯示(辨識+翻譯一次完成)──
+     中間結果節流 300ms 才更新畫面,而且只動最下方的 live 段落,
+     定案後寫成獨立段落,之後不再變動 → 不跳動、自動分段 */
+  var azLastUi=0, azPend=null, azPendTimer=null;
+  function azFlushUi(){
+    if(azPendTimer){clearTimeout(azPendTimer);azPendTimer=null;}
+    if(!azPend) return;
+    azLastUi=Date.now();
+    var p=azPend; azPend=null;
+    if(p.zh) setLive(p.zh,false);
+    else setLive(p.ja,true);
+  }
+  function azInterim(ja,zh){
+    if(!ja&&!zh) return;
+    jaBar.textContent='🎧 '+(ja||'');
+    azPend={ja:ja,zh:zh};
+    var d=Date.now()-azLastUi;
+    if(d>=300) azFlushUi();
+    else if(!azPendTimer) azPendTimer=setTimeout(azFlushUi,300-d);
+  }
+  function azFinal(ja,zh){
+    if(azPendTimer){clearTimeout(azPendTimer);azPendTimer=null;}
+    azPend=null;
+    if(!ja&&!zh) return;
+    clearLive();
+    if(zh) appendBlock(zh,false);
+    else appendBlock(ja,true);
+    jaBar.textContent='';
+  }
+
+  /* ── 看門狗(僅瀏覽器引擎)────────────────── */
+  var lastResultAt=0, watchdog=null;
+  function markResult(){lastResultAt=Date.now();}
+  function startWatchdog(){
+    stopWatchdog();
+    markResult();
+    watchdog=setInterval(function(){
+      if(!active) return;
+      if(Date.now()-lastResultAt>15000){
+        markResult();
+        stTxt.textContent='聆聽中(重新連線…)';
+        try{rec.stop();}catch(e){}
+      }
+    },4000);
+  }
+  function stopWatchdog(){
+    if(watchdog){clearInterval(watchdog);watchdog=null;}
+  }
+
+  /* ── 瀏覽器引擎(Web Speech)──────────────── */
+  function makeRec(){
+    var r=new SR();
+    r.lang='ja-JP';
+    r.continuous=true;
+    r.interimResults=true;
+    r.maxAlternatives=1;
+
+    r.onstart=function(){
+      markResult();
+      if(!firstStartShown){
+        firstStartShown=true;
+        clearSteps();
+        logStep('✓ 語音辨識已啟動,請說話','ok');
+        setTimeout(function(){clearSteps();},3000);
+      }
+    };
+    r.onaudiostart=function(){
+      if(active) stTxt.textContent='聆聽中(收音正常)';
+    };
+    r.onresult=function(ev){
+      markResult();
+      var interim='';
+      for(var i=ev.resultIndex;i<ev.results.length;i++){
+        var res=ev.results[i];
+        var txt=res[0].transcript.trim();
+        if(!txt) continue;
+        if(res.isFinal){ onFinal(txt); }
+        else{ interim+=txt; }
+      }
+      if(interim) onInterim(interim);
+    };
+    r.onerror=function(ev){
+      if(ev.error==='not-allowed'||ev.error==='service-not-allowed'){
+        logStep('✕ 麥克風被拒絕('+ev.error+'):點網址列左邊圖示 → 權限 → 麥克風改為允許','bad');
+        stop();
+      }else if(ev.error==='network'){
+        logStep('✕ 辨識服務連線不穩(network),自動重試中…','bad');
+      }else if(ev.error!=='no-speech'&&ev.error!=='aborted'){
+        logStep('✕ 辨識錯誤:'+ev.error,'bad');
+      }
+    };
+    r.onend=function(){
+      flushPending();
+      if(active && eng==='ws'){
+        try{r.start();}catch(e){
+          setTimeout(function(){ if(active&&eng==='ws'){try{r.start();}catch(e2){}} },300);
+        }
+      }
+    };
+    return r;
+  }
+
+  function startWS(){
+    if(!SR){
+      logStep('✕ 這個瀏覽器不支援語音辨識,請用 Android 的 Chrome,或點 ⚙ 改用 Azure 引擎','bad');
+      return;
+    }
+    if(!rec) rec=makeRec();
+    try{rec.start();}catch(e){}
+    setUI(true);
+    keepAwake(true);
+    startWatchdog();
+  }
+
+  /* ── Azure 引擎(語音翻譯,直接輸出繁中)──── */
+  function loadAzureSdk(){
+    if(window.SpeechSDK) return Promise.resolve();
+    return new Promise(function(res,rej){
+      var s=document.createElement('script');
+      s.src='https://cdn.jsdelivr.net/npm/microsoft-cognitiveservices-speech-sdk@latest/distrib/browser/microsoft.cognitiveservices.speech.sdk.bundle-min.js';
+      s.onload=function(){ window.SpeechSDK?res():rej(new Error('sdk')); };
+      s.onerror=function(){ rej(new Error('load')); };
+      document.head.appendChild(s);
+    });
+  }
+
+  function startAzure(){
+    if(!azKey||!azRegion){
+      logStep('✕ 尚未設定 Azure 金鑰與區域,點右上 ⚙ 設定','bad');
+      syncSettingsUI();
+      settings.classList.add('open');
+      return;
+    }
+    logStep('正在載入 Azure 語音引擎…');
+    loadAzureSdk().then(function(){
+      var S=window.SpeechSDK;
+      var cfg=S.SpeechTranslationConfig.fromSubscription(azKey,azRegion);
+      cfg.speechRecognitionLanguage='ja-JP';
+      cfg.addTargetLanguage('zh-Hant');
+      var audio=S.AudioConfig.fromDefaultMicrophoneInput();
+      azRec=new S.TranslationRecognizer(cfg,audio);
+
+      azRec.recognizing=function(s,e){
+        var ja=e.result.text||'', zh='';
+        try{ zh=e.result.translations.get('zh-Hant')||''; }catch(err){}
+        azInterim(ja,zh);
+      };
+      azRec.recognized=function(s,e){
+        if(e.result.reason===S.ResultReason.TranslatedSpeech){
+          var ja=e.result.text||'', zh='';
+          try{ zh=e.result.translations.get('zh-Hant')||''; }catch(err){}
+          azFinal(ja,zh);
+        }
+      };
+      azRec.canceled=function(s,e){
+        if(e.errorDetails){
+          var msg=String(e.errorDetails);
+          logStep('✕ Azure:'+msg.slice(0,120),'bad');
+          if(msg.indexOf('401')>=0||msg.indexOf('Authentication')>=0||msg.indexOf('WebSocket')>=0){
+            logStep('金鑰或區域可能不正確,點 ⚙ 檢查(區域要用英文小寫,如 japaneast)','bad');
+          }
+        }
+        if(active&&eng==='az'){
+          setTimeout(function(){
+            if(active&&eng==='az'&&azRec){ try{azRec.startContinuousRecognitionAsync();}catch(er){} }
+          },1500);
+        }
+      };
+      azRec.sessionStopped=function(){
+        if(active&&eng==='az'&&azRec){ try{azRec.startContinuousRecognitionAsync();}catch(er){} }
+      };
+
+      azRec.startContinuousRecognitionAsync(function(){
+        clearSteps();
+        logStep('✓ Azure 語音翻譯已啟動(直接輸出繁體中文)','ok');
+        setTimeout(function(){clearSteps();},3000);
+        setUI(true);
+        keepAwake(true);
+        stTxt.textContent='聆聽中(Azure)';
+      },function(err){
+        logStep('✕ Azure 啟動失敗:'+String(err).slice(0,120),'bad');
+      });
+    }).catch(function(){
+      logStep('✕ 無法載入 Azure SDK,請確認網路後再試','bad');
+    });
+  }
+
+  /* ── 啟動/停止 ──────────────────────────── */
+  function start(){
+    clearSteps();
+    firstStartShown=false;
+
+    if(!window.isSecureContext){
+      logStep('✕ 網址是 '+location.protocol+'// 開頭,無法使用麥克風','bad');
+      logStep('必須用 https:// 網址開啟(例如 GitHub Pages),不能直接開檔案','bad');
+      return;
+    }
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+      logStep('✕ 這個環境無法存取麥克風(可能是內嵌視窗),請用 Chrome 直接開網址','bad');
+      return;
+    }
+
+    logStep('1. 正在要求麥克風權限…(此時應跳出詢問視窗)');
+    navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
+      stream.getTracks().forEach(function(t){t.stop();});
+      clearSteps();
+      if(eng==='az') startAzure();
+      else startWS();
+    }).catch(function(err){
+      if(err.name==='NotAllowedError'||err.name==='SecurityError'){
+        logStep('✕ 權限被拒絕('+err.name+')','bad');
+        logStep('解法A:點網址列左邊圖示 → 權限 → 重設,重新整理後再按開始','bad');
+        logStep('解法B:手機設定 → 應用程式 → Chrome → 權限 → 麥克風 → 允許','bad');
+      }else if(err.name==='NotFoundError'){
+        logStep('✕ 找不到麥克風裝置('+err.name+')','bad');
+      }else{
+        logStep('✕ 麥克風啟動失敗:'+err.name+' '+err.message,'bad');
+      }
+    });
+  }
+
+  function stop(){
+    setUI(false);
+    keepAwake(false);
+    stopWatchdog();
+    if(rec){try{rec.stop();}catch(e){}}
+    if(azRec){
+      try{
+        azRec.stopContinuousRecognitionAsync(function(){
+          try{azRec.close();}catch(e){}
+          azRec=null;
+        },function(){ azRec=null; });
+      }catch(e){ azRec=null; }
+    }
+  }
+
+  toggle.addEventListener('click',function(){ active?stop():start(); });
+
+  clearBtn.addEventListener('click',function(){
+    transcript.innerHTML='';
+    jaBar.textContent='';
+    resetCur();
+    lastFinalNorm='';
+    empty.style.display='';
+    clearSteps();
+  });
+
+  document.addEventListener('visibilitychange',function(){
+    if(!document.hidden && active){
+      keepAwake(true);
+      if(eng==='ws'&&rec){ markResult(); try{rec.start();}catch(e){} }
+    }
+  });
+})();
+</script>
+</body>
+</html>
