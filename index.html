@@ -347,10 +347,19 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
      這樣「開始聆聽」的手勢就能預先解鎖播放權限,
      辨識回呼裡的自動朗讀才不會被瀏覽器的 autoplay 政策靜音。 */
   var synthObj=null, audioUnlocked=false;
+  // 播放用單一常駐 <audio> 元件,不要每句都 new Audio():手機瀏覽器對連續快速
+  // 建立/銷毀大量 Audio 物件很容易間歇性擋掉 play(),而且自動播放權限有時是
+  // 綁在「使用者手勢當下啟動的那個元素」上,用同一個元件從頭播到尾比較不會被擋。
+  var ttsAudioEl=null, ttsLastBlobUrl=null;
+  function getTtsAudioEl(){
+    if(!ttsAudioEl) ttsAudioEl=new Audio();
+    return ttsAudioEl;
+  }
   function primeAudio(){
-    // 在使用者手勢當下播一段無聲音訊,解鎖之後的程式化播放
+    // 在使用者手勢當下播一段無聲音訊,解鎖之後的程式化播放(用同一個元件之後重複播放)
     try{
-      var a=new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=');
+      var a=getTtsAudioEl();
+      a.src='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
       a.play().then(function(){audioUnlocked=true;}).catch(function(){});
     }catch(e){}
   }
@@ -373,15 +382,27 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
   function playBuf(buf){
     return new Promise(function(res){
       try{
-        var a=new Audio(URL.createObjectURL(new Blob([buf],{type:'audio/mpeg'})));
+        var a=getTtsAudioEl();
+        var url=URL.createObjectURL(new Blob([buf],{type:'audio/mpeg'}));
+        var staleUrl=ttsLastBlobUrl;
+        ttsLastBlobUrl=url;
         curAudio=a;
+        var done=false;
         var fin=function(){
-          try{URL.revokeObjectURL(a.src);}catch(e){}
+          if(done) return;
+          done=true;
+          if(staleUrl){ try{URL.revokeObjectURL(staleUrl);}catch(e){} }
           if(curAudio===a) curAudio=null;
           res();
         };
-        a.onended=a.onerror=fin;
-        a.play().catch(fin);   // 若仍被擋,直接跳下一句,不卡佇列
+        a.onended=fin;
+        a.onerror=fin;
+        a.src=url;
+        a.play().catch(function(err){
+          // 若仍被擋,記一下原因方便排查,然後直接跳下一句,不卡佇列
+          logStep('🔊 播放被擋:'+String(err&&err.name||err).slice(0,60),'bad');
+          fin();
+        });
       }catch(e){ res(); }
     });
   }
