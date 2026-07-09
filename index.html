@@ -50,8 +50,9 @@
 
   /* 設定面板 */
   #settings{
-    flex-shrink:0; border-bottom:1px solid var(--line);
+    flex-shrink:1; min-height:0; border-bottom:1px solid var(--line);
     padding:14px 16px; display:none; font-size:14px; line-height:1.8;
+    max-height:70vh; overflow-y:auto; -webkit-overflow-scrolling:touch;
   }
   #settings.open{display:block}
   #settings .ttl{color:var(--gold);font-weight:700;letter-spacing:.08em;margin-bottom:6px}
