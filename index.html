@@ -120,7 +120,7 @@
 
 <header>
   <div>
-    <h1>日語即時翻譯</h1>
+    <h1 id="mainTitle">日語即時翻譯</h1>
     <div class="sub" id="engLabel">日本語 → 繁體中文</div>
   </div>
   <div id="hRight">
@@ -133,7 +133,11 @@
 </header>
 
 <div id="settings">
-  <div class="ttl">辨識引擎</div>
+  <div class="ttl">來源語言</div>
+  <label><input type="radio" name="srcLang" value="ja" id="langJa">日文(日本語)</label>
+  <label><input type="radio" name="srcLang" value="en" id="langEn">英文(English)</label>
+
+  <div class="ttl" style="margin-top:10px">辨識引擎</div>
   <label><input type="radio" name="eng" value="ws" id="engWs">瀏覽器內建(免費、免設定,準確度普通)</label>
   <label><input type="radio" name="eng" value="az" id="engAz">Azure 語音翻譯(較快較準、直接輸出中文,需金鑰)</label>
   <div id="azFields">
@@ -163,7 +167,7 @@
     按下 <b>開始聆聽</b>,允許麥克風權限,<br>
     把手機朝向聲音來源。<br>
     中文翻譯會一句一段往下累積顯示。<br>
-    <span style="font-size:13px">斜體淡字 = 日文原文(翻譯中或翻譯失敗)<br>
+    <span style="font-size:13px">斜體淡字 = 原文(翻譯中或翻譯失敗)<br>
     覺得辨識太慢?點右上 <b>⚙</b> 切換更快的 Azure 引擎</span>
   </div>
   <div id="transcript"></div>
@@ -197,18 +201,31 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
   var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   var rec=null, azRec=null, active=false, wakeLock=null, firstStartShown=false;
 
-  /* ── 設定(引擎 / Azure 金鑰)──────────────── */
+  /* ── 設定(來源語言 / 引擎 / Azure 金鑰)──────── */
   var eng='az', azKey=AZ_KEY, azRegion=AZ_REGION;
+  var srcLang='ja';   // 'ja' = 日文, 'en' = 英文;辨識/翻譯的來源語言,目標永遠是繁體中文
   try{
     eng=localStorage.getItem('eng')||'az';
     azKey=localStorage.getItem('azKey')||AZ_KEY;
     azRegion=localStorage.getItem('azRegion')||AZ_REGION;
+    srcLang=localStorage.getItem('srcLang')||'ja';
+    if(srcLang!=='ja'&&srcLang!=='en') srcLang='ja';
   }catch(e){}
+  function srcLangName(){return srcLang==='en'?'English':'日本語';}
+  function srcLangShort(){return srcLang==='en'?'英語':'日語';}
+  function srcRecogCode(){return srcLang==='en'?'en-US':'ja-JP';}
+  function srcGoogleCode(){return srcLang==='en'?'en':'ja';}
   function engName(){return eng==='az'?'Azure 引擎':'瀏覽器引擎';}
-  function refreshEngLabel(){engLabel.textContent='日本語 → 繁體中文('+engName()+')';}
+  function refreshEngLabel(){
+    mainTitle.textContent=srcLangShort()+'即時翻譯';
+    engLabel.textContent=srcLangName()+' → 繁體中文('+engName()+')';
+  }
+  var mainTitle=document.getElementById('mainTitle');
   refreshEngLabel();
 
   var settings=document.getElementById('settings');
+  var langJa=document.getElementById('langJa');
+  var langEn=document.getElementById('langEn');
   var engWs=document.getElementById('engWs');
   var engAz=document.getElementById('engAz');
   var azFields=document.getElementById('azFields');
@@ -219,6 +236,7 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
   function segRadios(){ return document.querySelectorAll('input[name=segMs]'); }
 
   function syncSettingsUI(){
+    (srcLang==='en'?langEn:langJa).checked=true;
     (eng==='az'?engAz:engWs).checked=true;
     azFields.classList.toggle('show',eng==='az');
     azKeyIn.value=azKey;
@@ -234,11 +252,13 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
   document.getElementById('saveSet').addEventListener('click',function(){
     var wasActive=active;
     if(wasActive) stop();
+    srcLang=langEn.checked?'en':'ja';
     eng=engAz.checked?'az':'ws';
     azKey=azKeyIn.value.trim();
     azRegion=azRegionIn.value.trim().toLowerCase();
     Array.prototype.forEach.call(segRadios(),function(r){ if(r.checked) segMs=r.value; });
     try{
+      localStorage.setItem('srcLang',srcLang);
       localStorage.setItem('eng',eng);
       localStorage.setItem('azKey',azKey);
       localStorage.setItem('azRegion',azRegion);
@@ -246,9 +266,10 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
     }catch(e){}
     refreshEngLabel();
     try{ resetSynth(); }catch(e){}
+    rec=null;   // 換來源語言要重建辨識器(SpeechRecognition 的 lang 建立後不能換)
     settings.classList.remove('open');
     clearSteps();
-    logStep('✓ 已切換為'+engName(),'ok');
+    logStep('✓ 已切換為'+srcLangShort()+'/'+engName(),'ok');
     setTimeout(function(){clearSteps();},2500);
     if(wasActive) start();
   });
@@ -506,7 +527,7 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
   function translateReq(jaText,timeoutMs){
     var ctrl=(typeof AbortController!=='undefined')?new AbortController():null;
     var to=ctrl?setTimeout(function(){try{ctrl.abort();}catch(e){}},timeoutMs):null;
-    var url='https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=zh-TW&dt=t&q='+encodeURIComponent(jaText);
+    var url='https://translate.googleapis.com/translate_a/single?client=gtx&sl='+srcGoogleCode()+'&tl=zh-TW&dt=t&q='+encodeURIComponent(jaText);
     return fetch(url,ctrl?{signal:ctrl.signal}:{}).then(function(r){
       if(to)clearTimeout(to);
       if(!r.ok) throw new Error(r.status);
@@ -842,7 +863,7 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
   /* ── 瀏覽器引擎(Web Speech)──────────────── */
   function makeRec(){
     var r=new SR();
-    r.lang='ja-JP';
+    r.lang=srcRecogCode();
     r.continuous=true;
     r.interimResults=true;
     r.maxAlternatives=1;
@@ -927,7 +948,7 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
     loadAzureSdk().then(function(){
       var S=window.SpeechSDK;
       var cfg=S.SpeechTranslationConfig.fromSubscription(azKey,azRegion);
-      cfg.speechRecognitionLanguage='ja-JP';
+      cfg.speechRecognitionLanguage=srcRecogCode();
       cfg.addTargetLanguage('zh-Hant');
       // 斷句方式(⚙ 可調):
       //  sem = Semantic 語意斷句(AI 依句意切,講者不停頓也會切段)
