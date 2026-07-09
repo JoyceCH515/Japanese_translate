@@ -296,10 +296,14 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
     }
   });
 
+  // 判斷字串是否含有「可唸的內容」(中日文字或英數字):
+  // 不能用 \w/\W 判斷,因為 JS 的 \w 只認 ASCII 字母數字,中文字全部會被當成「非文字」,
+  // 導致純中文句子被誤判成「純符號」整句被吃掉不唸(只有混到英文字母/數字的句子才會倖存)。
+  var HAS_SPEAKABLE=/[㐀-鿿豈-﫿A-Za-z0-9]/;
   function speakZh(text){
     if(!ttsOn||!text) return;
     text=String(text).trim();
-    if(!text||/^[\s\d\W]+$/.test(text)) return;   // 純符號/數字不唸
+    if(!text||!HAS_SPEAKABLE.test(text)) return;   // 純符號/空白不唸
     // 長段落拆成句子分批進佇列:每句獨立成敗,不會一整段卡死或被整段丟掉
     var parts=text.match(/[^。!?!?…]+[。!?!?…]*/g)||[text];
     var buf='';
@@ -307,7 +311,7 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
     for(var i=0;i<parts.length;i++){
       buf+=parts[i];
       if(buf.length>=48 || i===parts.length-1){
-        if(buf.replace(/[\s\W]/g,'').length) ttsQueue.push({t:buf, ts:now});
+        if(HAS_SPEAKABLE.test(buf)) ttsQueue.push({t:buf, ts:now});
         buf='';
       }
     }
