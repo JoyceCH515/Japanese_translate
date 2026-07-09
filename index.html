@@ -111,7 +111,7 @@
     background:var(--gold);color:#211a05;transition:background .15s,color .15s;
   }
   #toggle.on{background:#3a2f3f;color:var(--err);border:1px solid rgba(255,128,128,.4)}
-  #clear{
+  #clear,#dlBtn{
     width:56px;height:56px;border-radius:50%;background:none;
     border:1px solid var(--line);color:var(--ja);font-size:12px;font-family:inherit;cursor:pointer;
   }
@@ -178,6 +178,7 @@
 
 <footer>
   <button id="clear">清除</button>
+  <button id="dlBtn" title="下載翻譯記錄">下載</button>
   <button id="toggle">開始聆聽</button>
 </footer>
 
@@ -193,6 +194,7 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
   var empty=document.getElementById('empty');
   var toggle=document.getElementById('toggle');
   var clearBtn=document.getElementById('clear');
+  var dlBtn=document.getElementById('dlBtn');
   var dot=document.getElementById('dot');
   var stTxt=document.getElementById('stTxt');
   var steps=document.getElementById('steps');
@@ -1083,6 +1085,33 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
     empty.style.display='';
     clearSteps();
   });
+
+  function downloadTranscript(){
+    var blocks=transcript.querySelectorAll('.blk:not(.live)');
+    if(!blocks.length){
+      clearSteps();
+      logStep('目前還沒有翻譯內容可以下載','bad');
+      setTimeout(clearSteps,2500);
+      return;
+    }
+    var lines=[];
+    Array.prototype.forEach.call(blocks,function(b){ lines.push(b.textContent); });
+    var now=new Date();
+    var pad=function(n){return String(n).padStart(2,'0');};
+    var stamp=now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate())+' '+pad(now.getHours())+':'+pad(now.getMinutes());
+    var header=srcLangShort()+'即時翻譯記錄 — '+stamp+'('+srcLangName()+' → 繁體中文)';
+    var text=header+'\n\n'+lines.join('\n\n')+'\n';
+    var blob=new Blob([text],{type:'text/plain;charset=utf-8'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    a.href=url;
+    a.download='翻譯記錄_'+now.getFullYear()+pad(now.getMonth()+1)+pad(now.getDate())+'_'+pad(now.getHours())+pad(now.getMinutes())+'.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ try{URL.revokeObjectURL(url);}catch(e){} },1000);
+  }
+  dlBtn.addEventListener('click',downloadTranscript);
 
   document.addEventListener('visibilitychange',function(){
     if(!document.hidden && active){
