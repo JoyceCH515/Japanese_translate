@@ -370,7 +370,9 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
     try{
       var c=S.SpeechConfig.fromSubscription(azKey,azRegion);
       c.speechSynthesisVoiceName='zh-TW-HsiaoChenNeural';
-      try{ c.speechSynthesisOutputFormat=S.SpeechSynthesisOutputFormat.Audio24Khz48KBitRateMonoMp3; }catch(e){}
+      // 48KBitRate 壓縮太重,神經網路語音的細節會被壓沒、聽起來偏機器人聲;
+      // 短句音檔本來就不大,拉高到 160KBitRate 對延遲影響很小,音質差很多。
+      try{ c.speechSynthesisOutputFormat=S.SpeechSynthesisOutputFormat.Audio24Khz160KBitRateMonoMp3; }catch(e){}
       synthObj=new S.SpeechSynthesizer(c, null);   // null = 不用 SDK 播放器,拿音訊資料自己播
     }catch(e){ synthObj=null; }
     return synthObj;
