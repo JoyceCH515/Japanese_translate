@@ -267,7 +267,8 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
   /* ── 中文語音朗讀(只唸「已定案」的翻譯)───────
      引擎:Azure Neural TTS(zh-TW-HsiaoChen 自然女聲,同一組金鑰)
      沒金鑰或連線失敗時退回瀏覽器內建 TTS。
-     佇列最多保留 3 句:現場講太快時丟掉最舊的,跟上進度。 */
+     佇列不丟句:每句白色定案的翻譯都會完整唸完,
+     講話太快時朗讀會落後現場,但不會跳句。 */
   var ttsOn=false, ttsQueue=[], ttsPlaying=false, curAudio=null;
   try{ ttsOn = localStorage.getItem('ttsOn')==='1'; }catch(e){}
   var ttsBtn=document.getElementById('ttsBtn');
@@ -310,14 +311,10 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
         buf='';
       }
     }
-    while(ttsQueue.length>6) ttsQueue.shift();
     ttsPump();
   }
   function ttsPump(){
     if(ttsPlaying||!ttsQueue.length) return;
-    // 時效制:排隊超過 8 秒的內容已跟不上現場,直接丟(至少留最新一句)
-    var now=Date.now();
-    while(ttsQueue.length>1 && now-ttsQueue[0].ts>8000) ttsQueue.shift();
     var item=ttsQueue.shift(), t=item.t;
     ttsPlaying=true;
     ttsBtn.classList.add('speaking');
@@ -758,18 +755,21 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
   var lastResultAt=0, watchdog=null, azReconnecting=false;
   function markResult(){lastResultAt=Date.now();}
   function reconnectAzure(){
-    if(azReconnecting||!azRec) return;
+    // 注意:不能只在同一個 azRec 物件上呼叫 stop/startContinuousRecognitionAsync 就
+    // 期待復原——底層音訊管線卡住時,舊物件本身已經壞了,呼叫 stop 甚至可能永遠不會
+    // 回呼(azReconnecting 卡 true 導致看門狗之後每次都被擋掉,永遠恢復不了)。
+    // 因此直接丟棄舊物件、整個重建(跟手動按停止再重新開始聆聽的效果一樣)。
+    if(azReconnecting) return;
     azReconnecting=true;
     stTxt.textContent='聆聽中(重新連線…)';
-    try{
-      azRec.stopContinuousRecognitionAsync(function(){
-        azReconnecting=false;
-        if(active&&eng==='az'&&azRec){ try{azRec.startContinuousRecognitionAsync(markResult);}catch(e){} }
-      },function(){
-        azReconnecting=false;
-        if(active&&eng==='az'&&azRec){ try{azRec.startContinuousRecognitionAsync(markResult);}catch(e){} }
-      });
-    }catch(e){ azReconnecting=false; }
+    var old=azRec;
+    azRec=null;
+    if(old){
+      try{ old.recognizing=null; old.recognized=null; old.canceled=null; old.sessionStopped=null; }catch(e){}
+      try{ old.close(); }catch(e){}
+    }
+    azReconnecting=false;
+    if(active&&eng==='az') startAzure();
   }
   function startWatchdog(){
     stopWatchdog();
