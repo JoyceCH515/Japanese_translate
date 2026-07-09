@@ -327,7 +327,14 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
       if(ttsOn) ttsPump();
     }
     setTimeout(finish, 30000);   // 極端保險,正常不會觸發
-    azureTts(t).catch(function(){ return browserTts(t); })
+    azureTts(t).then(function(){ ttsFailStreak=0; },function(reason){
+      ttsFailStreak++;
+      // 連續失敗才報:偶爾一次不用吵,但每卡3次就回報一次原因,方便抓到底是連線問題還是別的
+      if(ttsFailStreak===1||ttsFailStreak%3===0){
+        logStep('🔊 Azure 朗讀失敗('+ttsFailStreak+'次,'+reason+'),改用瀏覽器朗讀','bad');
+      }
+      return browserTts(t);
+    })
       .catch(function(){})
       .then(finish, finish);
   }
@@ -374,18 +381,21 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
       }catch(e){ res(); }
     });
   }
+  var ttsFailStreak=0;
   function azureTts(text){
     return new Promise(function(res,rej){
       function go(){
         var sy=getSynth();
-        if(!sy) return rej();
+        if(!sy) return rej('no-synth');
         var S=window.SpeechSDK;
         var settled=false;
-        // 「合成」5 秒沒回應 = 連線卡住 → 重建、換下一句;播放依實際音長
+        // 「合成」逾時沒回應 = 連線卡住 → 重建、換下一句;播放依實際音長
+        // (拉長到 9 秒:冷連線本身的網路交握就可能要幾秒,設太短會一直誤判成卡住、
+        //  一直 reset 反而每句都要重新交握,越拖越久)
         var guard=setTimeout(function(){
           if(settled) return;
-          settled=true; resetSynth(); rej();
-        },5000);
+          settled=true; resetSynth(); rej('timeout');
+        },9000);
         sy.speakTextAsync(text,
           function(r){
             if(settled) return;
@@ -393,23 +403,23 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
             if(r && r.reason===S.ResultReason.SynthesizingAudioCompleted && r.audioData){
               playBuf(r.audioData).then(res);
             }else{
-              resetSynth(); rej();
+              resetSynth(); rej('bad-result:'+(r&&r.reason));
             }
           },
-          function(){
+          function(err){
             if(settled) return;
             settled=true; clearTimeout(guard);
-            resetSynth(); rej();
+            resetSynth(); rej('error:'+String(err).slice(0,80));
           });
       }
       if(window.SpeechSDK) go();
-      else if(typeof loadAzureSdk==='function') loadAzureSdk().then(go,function(){rej();});
-      else rej();
+      else if(typeof loadAzureSdk==='function') loadAzureSdk().then(go,function(){rej('sdk-load-fail');});
+      else rej('no-sdk');
     });
   }
   function browserTts(text){
     return new Promise(function(res,rej){
-      if(!window.speechSynthesis) return rej();
+      if(!window.speechSynthesis) return rej('no-speechSynthesis');
       var u=new SpeechSynthesisUtterance(text);
       u.lang='zh-TW'; u.rate=1;
       var vs=speechSynthesis.getVoices().filter(function(v){return /zh[-_](TW|HK)|cmn/i.test(v.lang);});
