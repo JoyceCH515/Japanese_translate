@@ -810,7 +810,16 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
           tail=zh.slice(nn);
         }
       }
-      if(tail.replace(/[\s。,、!?!?…]/g,'')) appendBlock(tail.trim(),false);
+      // 尾巴可能累積了好幾句(語意斷句在講者說完整段話前不太吐中間結果,
+      // 一次定案時常常一口氣補好幾句)。拆回一句一個白色段落,
+      // 不要整段黏成一大塊,畫面才會跟其他句子一樣是一句一段。
+      if(tail.replace(/[\s。,、!?!?…]/g,'')){
+        var sents=tail.trim().match(/[^。!?!?…]+[。!?!?…]*/g)||[tail.trim()];
+        for(var si=0;si<sents.length;si++){
+          var sTrim=sents[si].trim();
+          if(sTrim) appendBlock(sTrim,false);
+        }
+      }
     }
     else appendBlock(ja,true);
     azResetDisp();
