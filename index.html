@@ -411,7 +411,7 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
     return new Promise(function(res,rej){
       if(!window.speechSynthesis) return rej();
       var u=new SpeechSynthesisUtterance(text);
-      u.lang='zh-TW'; u.rate=1.05;
+      u.lang='zh-TW'; u.rate=1;
       var vs=speechSynthesis.getVoices().filter(function(v){return /zh[-_](TW|HK)|cmn/i.test(v.lang);});
       var nat=vs.filter(function(v){return /natural|neural|google/i.test(v.name);})[0];
       if(nat||vs[0]) u.voice=nat||vs[0];
