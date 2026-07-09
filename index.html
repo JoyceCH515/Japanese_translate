@@ -407,6 +407,17 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
     });
   }
   var ttsFailStreak=0;
+  var TTS_RATE='+10%';   // 中文朗讀語速(SSML prosody rate,+10% ≈ 1.1 倍速)
+  function xmlEscape(s){
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+  }
+  function buildSsml(text){
+    return '<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="zh-TW">'
+      +'<voice name="zh-TW-HsiaoChenNeural">'
+      +'<prosody rate="'+TTS_RATE+'">'+xmlEscape(text)+'</prosody>'
+      +'</voice></speak>';
+  }
   function azureTts(text){
     return new Promise(function(res,rej){
       function go(){
@@ -421,7 +432,7 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
           if(settled) return;
           settled=true; resetSynth(); rej('timeout');
         },9000);
-        sy.speakTextAsync(text,
+        sy.speakSsmlAsync(buildSsml(text),
           function(r){
             if(settled) return;
             settled=true; clearTimeout(guard);
@@ -446,7 +457,7 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
     return new Promise(function(res,rej){
       if(!window.speechSynthesis) return rej('no-speechSynthesis');
       var u=new SpeechSynthesisUtterance(text);
-      u.lang='zh-TW'; u.rate=1;
+      u.lang='zh-TW'; u.rate=1.1;
       var vs=speechSynthesis.getVoices().filter(function(v){return /zh[-_](TW|HK)|cmn/i.test(v.lang);});
       var nat=vs.filter(function(v){return /natural|neural|google/i.test(v.name);})[0];
       if(nat||vs[0]) u.voice=nat||vs[0];
