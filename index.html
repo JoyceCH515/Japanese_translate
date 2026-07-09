@@ -719,6 +719,7 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
 
   function azInterim(ja,zh){
     if(!ja&&!zh) return;
+    markResult();
     jaBar.textContent='🎧 '+(ja||'');
     azPend={ja:ja,zh:zh};
     var d=Date.now()-azLastUi;
@@ -726,6 +727,7 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
     else if(!azPendTimer) azPendTimer=setTimeout(azFlushUi,300-d);
   }
   function azFinal(ja,zh){
+    markResult();
     if(azPendTimer){clearTimeout(azPendTimer);azPendTimer=null;}
     azPend=null;
     if(!ja&&!zh) return;
@@ -749,9 +751,26 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
     jaBar.textContent='';
   }
 
-  /* ── 看門狗(僅瀏覽器引擎)────────────────── */
-  var lastResultAt=0, watchdog=null;
+  /* ── 看門狗(兩個引擎共用)──────────────────
+     若持續 15 秒收不到任何辨識結果(常見於手機切換 WiFi/行動網路、
+     螢幕鎖定喚醒、背景化導致連線悄悄卡住),自動重新連線,
+     不用等使用者發現「聆聽中」卡住後手動按停止再重開。 */
+  var lastResultAt=0, watchdog=null, azReconnecting=false;
   function markResult(){lastResultAt=Date.now();}
+  function reconnectAzure(){
+    if(azReconnecting||!azRec) return;
+    azReconnecting=true;
+    stTxt.textContent='聆聽中(重新連線…)';
+    try{
+      azRec.stopContinuousRecognitionAsync(function(){
+        azReconnecting=false;
+        if(active&&eng==='az'&&azRec){ try{azRec.startContinuousRecognitionAsync(markResult);}catch(e){} }
+      },function(){
+        azReconnecting=false;
+        if(active&&eng==='az'&&azRec){ try{azRec.startContinuousRecognitionAsync(markResult);}catch(e){} }
+      });
+    }catch(e){ azReconnecting=false; }
+  }
   function startWatchdog(){
     stopWatchdog();
     markResult();
@@ -759,8 +778,12 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
       if(!active) return;
       if(Date.now()-lastResultAt>15000){
         markResult();
-        stTxt.textContent='聆聽中(重新連線…)';
-        try{rec.stop();}catch(e){}
+        if(eng==='ws'){
+          stTxt.textContent='聆聽中(重新連線…)';
+          try{rec.stop();}catch(e){}
+        }else if(eng==='az'){
+          reconnectAzure();
+        }
       }
     },4000);
   }
@@ -893,14 +916,14 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
             logStep('金鑰或區域可能不正確,點 ⚙ 檢查(區域要用英文小寫,如 japaneast)','bad');
           }
         }
-        if(active&&eng==='az'){
+        if(active&&eng==='az'&&!azReconnecting){
           setTimeout(function(){
-            if(active&&eng==='az'&&azRec){ try{azRec.startContinuousRecognitionAsync();}catch(er){} }
+            if(active&&eng==='az'&&azRec&&!azReconnecting){ try{azRec.startContinuousRecognitionAsync(markResult);}catch(er){} }
           },1500);
         }
       };
       azRec.sessionStopped=function(){
-        if(active&&eng==='az'&&azRec){ try{azRec.startContinuousRecognitionAsync();}catch(er){} }
+        if(active&&eng==='az'&&azRec&&!azReconnecting){ try{azRec.startContinuousRecognitionAsync(markResult);}catch(er){} }
       };
 
       azRec.startContinuousRecognitionAsync(function(){
@@ -909,6 +932,7 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
         setTimeout(function(){clearSteps();},3000);
         setUI(true);
         keepAwake(true);
+        startWatchdog();
         stTxt.textContent='聆聽中(Azure)';
       },function(err){
         logStep('✕ Azure 啟動失敗:'+String(err).slice(0,120),'bad');
