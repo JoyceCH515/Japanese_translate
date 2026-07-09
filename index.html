@@ -584,7 +584,7 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
     smartScroll();
   }
   function clearLive(){ if(liveEl){liveEl.remove();liveEl=null;} }
-  function appendBlock(text,isRaw){
+  function appendBlock(text,isRaw,noSpeak){
     empty.style.display='none';
     var d=document.createElement('div');
     d.className='blk'+(isRaw?' raw':'');
@@ -592,7 +592,7 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
     if(liveEl) transcript.insertBefore(d,liveEl);
     else transcript.appendChild(d);
     smartScroll();
-    if(!isRaw) speakZh(text);   // 朗讀唯一的觸發點:白色(定案中文)區塊出現就唸
+    if(!isRaw && !noSpeak) speakZh(text);   // 朗讀唯一的觸發點:白色(定案中文)區塊出現就唸
     return d;
   }
 
@@ -814,14 +814,18 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
         }
       }
       // 尾巴可能累積了好幾句(語意斷句在講者說完整段話前不太吐中間結果,
-      // 一次定案時常常一口氣補好幾句)。拆回一句一個白色段落,
-      // 不要整段黏成一大塊,畫面才會跟其他句子一樣是一句一段。
+      // 一次定案時常常一口氣補好幾句)。畫面上拆回一句一個白色段落,
+      // 不要整段黏成一大塊;但朗讀要用完整的尾巴一次送進佇列(內部依
+      // 48 字上限自動分段批次),不要每句各自呼叫 speakZh——不然每句
+      // 都各發一次語音合成的網路請求,朗讀反而會落後更多。
       if(tail.replace(/[\s。,、!?!?…]/g,'')){
-        var sents=tail.trim().match(/[^。!?!?…]+[。!?!?…]*/g)||[tail.trim()];
+        var fullTail=tail.trim();
+        var sents=fullTail.match(/[^。!?!?…]+[。!?!?…]*/g)||[fullTail];
         for(var si=0;si<sents.length;si++){
           var sTrim=sents[si].trim();
-          if(sTrim) appendBlock(sTrim,false);
+          if(sTrim) appendBlock(sTrim,false,true);
         }
+        speakZh(fullTail);
       }
     }
     else appendBlock(ja,true);
@@ -1101,7 +1105,10 @@ var AZ_REGION='japaneast';     /* 區域(你的是 japaneast)   */
     var stamp=now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate())+' '+pad(now.getHours())+':'+pad(now.getMinutes());
     var header=srcLangShort()+'即時翻譯記錄 — '+stamp+'('+srcLangName()+' → 繁體中文)';
     var text=header+'\n\n'+lines.join('\n\n')+'\n';
-    var blob=new Blob([text],{type:'text/plain;charset=utf-8'});
+    // 加 UTF-8 BOM:有些手機的文字檢視器不看 charset,靠猜的,沒有 BOM 常把中文猜成
+    // 別的編碼變亂碼(檔案內容其實是對的,只是被看的軟體猜錯編碼)。
+    var BOM=String.fromCharCode(0xFEFF);
+    var blob=new Blob([BOM+text],{type:'text/plain;charset=utf-8'});
     var url=URL.createObjectURL(blob);
     var a=document.createElement('a');
     a.href=url;
